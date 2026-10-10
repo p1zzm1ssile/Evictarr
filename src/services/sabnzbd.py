@@ -92,8 +92,14 @@ class SABnzbdClient:
 
         return results
 
-    def remove_torrents(self, ids: list):
-        self.call("queue", name="delete", value=",".join(ids), del_files=int(config.delete_files))
+    def get_files(self, torrent_id: str) -> list:
+        return [f.get("filename", "") for f in self.call("get_files", value=torrent_id).get("files", [])]
+
+    def remove_torrents(self, ids: list, delete_files: bool = None):
+        if delete_files is None:
+            delete_files = config.delete_files
+
+        self.call("queue", name="delete", value=",".join(ids), del_files=int(delete_files))
 
     def version(self) -> str:
         # The version call works without an API key, so check the key separately

@@ -106,13 +106,20 @@ class DelugeClient:
 
         return results
 
-    def remove_torrents(self, hashes: list):
+    def get_files(self, torrent_id: str) -> list:
+        status = self.call("core.get_torrent_status", [torrent_id, ["files"]])
+        return [f["path"] for f in (status or {}).get("files", [])]
+
+    def remove_torrents(self, hashes: list, delete_files: bool = None):
+        if delete_files is None:
+            delete_files = config.delete_files
+
         try:
-            self.call("core.remove_torrents", [hashes, config.delete_files])
+            self.call("core.remove_torrents", [hashes, delete_files])
         except Exception:
             # Deluge 1.3 has no bulk remove, so remove one at a time
             for h in hashes:
-                self.call("core.remove_torrent", [h, config.delete_files])
+                self.call("core.remove_torrent", [h, delete_files])
 
     def version(self) -> str:
         return self.call("daemon.get_version", [])

@@ -40,6 +40,7 @@ class Daemons:
     def __init__(self):
         self.sonarr = Sonarr()
         self.radarr = Radarr()
+        self.file_cache = {}  # download id -> file names, which don't change once known
 
         match config.torrent_client.lower():
             case "qbittorrent" | "rdtclient":
@@ -215,6 +216,85 @@ class Daemons:
                 removed += 1
 
         return f"purged and blocklisted {removed} failed import(s)"
+
+    def extension_evictarr(self):
+        self.run_forever(
+            "extensions", config.purge_extensions_interval, self.purge_extensions
+        )
+
+    def purge_extensions(self):
+        results = []
+        errors = []
+
+        for service, arr in (("sonarr", self.sonarr), ("radarr", self.radarr)):
+            try:
+                queue = [q for page in arr.get_queue() for q in page]
+                results.append(self.purge_blocked_files(service, arr, queue))
+            except Exception as e:
+                errors.append(f"{service} failed ({describe_error(e)})")
+
+        return not errors, "; ".join(results + errors)
+
+    def purge_blocked_files(self, service: str, arr, queue: list):
+        """Remove downloads containing blocked file types, such as .arj or .lnk.
+
+        Only downloads Sonarr/Radarr are tracking are checked. A season pack has
+        one queue item per episode, all sharing the same download id.
+        """
+        tracked = {}
+        for q in queue:
+            download_id = (q.get("downloadId") or "").lower()
+            if download_id:
+                tracked.setdefault(download_id, q)
+
+        downloads = {t["id"].lower(): t for t in self.torrent_client.get_torrents()}
+        blocked = []
+
+        for download_id, q in tracked.items():
+            t = downloads.get(download_id)
+            if t is None:
+                continue
+
+            # A magnet link has no file list until its metadata arrives
+            files = self.file_cache.get(download_id) or self.torrent_client.get_files(t["id"])
+            if files:
+                self.file_cache[download_id] = files
+
+            matches = sorted(
+                {
+                    ext
+                    for f in files
+                    for ext in config.blocked_extensions
+                    if f.lower().endswith(f".{ext}")
+                }
+            )
+            if matches:
+                blocked.append((t, q, matches))
+
+        if not blocked:
+            return f"no blocked file types in {service.capitalize()} downloads"
+
+        blocklisted = 0
+        for n, (t, q, matches) in enumerate(blocked, start=1):
+            found = ", ".join(f".{m}" for m in matches)
+            logger.log(
+                "ACTION",
+                f"({n}/{len(blocked)}) Purging download with blocked file type(s) {found}: {t['name']}",
+            )
+            # Blocklist first, while the release is still in the queue, so the
+            # Arr searches for another release instead of treating this one as done
+            if arr.block_release(q["title"], q["id"]):
+                blocklisted += 1
+
+        # Always delete the data: these files may be malware
+        self.torrent_client.remove_torrents([t["id"] for t, _, _ in blocked], delete_files=True)
+        for t, _, _ in blocked:
+            self.file_cache.pop(t["id"].lower(), None)
+
+        return (
+            f"purged {len(blocked)} download(s) with blocked file types, "
+            f"blocklisted {blocklisted} in {service.capitalize()}"
+        )
 
     def webui(self):
         server_address = ("", config.web_port)

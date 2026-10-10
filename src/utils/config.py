@@ -20,6 +20,15 @@ block_stalled_torrents = os.getenv("BLOCK_STALLED_TORRENTS", "True").lower() == 
 purge_imported = os.getenv("PURGE_IMPORTED", "True").lower() == "true"
 purge_imported_interval = int(os.getenv("PURGE_IMPORTED_INTERVAL", 600))
 purge_failed_imports = os.getenv("PURGE_FAILED_IMPORTS", "False").lower() == "true"
+purge_extensions = os.getenv("PURGE_EXTENSIONS", "False").lower() == "true"
+purge_extensions_interval = int(os.getenv("PURGE_EXTENSIONS_INTERVAL", 60))
+# Archives (rar, zip, 7z) aren't blocked by default, since many genuine releases use them
+blocked_extensions = [
+    e.lower().lstrip(".")
+    for e in split_labels(
+        os.getenv("BLOCKED_EXTENSIONS", "arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1")
+    )
+]
 delete_files = os.getenv("DELETE_FILES", "True").lower() == "true"
 ignore_other_categories = (
     os.getenv("IGNORE_OTHER_CATEGORIES", "False").lower() == "true"

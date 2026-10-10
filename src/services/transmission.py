@@ -100,10 +100,19 @@ class TransmissionClient:
 
         return results
 
-    def remove_torrents(self, hashes: list):
+    def get_files(self, torrent_id: str) -> list:
+        torrents = self.call(
+            "torrent-get", {"ids": [torrent_id], "fields": ["files"]}
+        ).get("torrents", [])
+        return [f["name"] for t in torrents for f in t.get("files", [])]
+
+    def remove_torrents(self, hashes: list, delete_files: bool = None):
+        if delete_files is None:
+            delete_files = config.delete_files
+
         self.call(
             "torrent-remove",
-            {"ids": hashes, "delete-local-data": config.delete_files},
+            {"ids": hashes, "delete-local-data": delete_files},
         )
 
     def version(self) -> str:

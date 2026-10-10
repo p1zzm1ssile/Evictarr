@@ -9,6 +9,7 @@ Evictarr is a lightweight companion to your Arr stack that keeps your download c
 * Removes downloads once Sonarr or Radarr has imported them.
 * Finds stalled downloads, blocklists them in Sonarr/Radarr and searches for a replacement.
 * Optionally clears downloads that Sonarr/Radarr couldn't import.
+* Optionally removes downloads containing dangerous file types such as `.arj` and `.lnk`, blocklists them and searches for a replacement.
 * Can be limited to Sonarr's and Radarr's own categories, leaving everything else in your client alone.
 * Health status in the web UI, at `/health`, and as a Docker health check.
 
@@ -103,6 +104,20 @@ Set `PURGE_FAILED_IMPORTS=True` to clear downloads that finished but that Sonarr
 
 This is off by default because it also catches downloads waiting for you to import them by hand. If you use manual import, leave it off.
 
+## Removing Downloads With Blocked File Types
+
+Some public torrents carry malware in files like `.arj` or `.lnk`. Even if your torrent client skips those files, Sonarr and Radarr still see the download as finished and never look for another release.
+
+Set `PURGE_EXTENSIONS=True` and Evictarr checks the file list of every download Sonarr and Radarr are tracking (it never touches anything else) every `PURGE_EXTENSIONS_INTERVAL` seconds. When a download contains a blocked file type, Evictarr:
+
+1. Adds the release to the Sonarr/Radarr blocklist, so they search for another (if `RETRY_SEARCH` is on).
+2. Removes the download from your client.
+3. Deletes its files, even if `DELETE_FILES` is off, since they may be malware.
+
+Set the file types with `BLOCKED_EXTENSIONS`, separated by commas, with or without the dot. The default is `arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1`. Archives like `rar`, `zip` and `7z` aren't in the default list because many genuine releases are packed in them. Add them only if you're sure.
+
+This works with every supported download client, and was requested by [binhex](https://github.com/binhex) in [Purgarr #4](https://github.com/steveharsant/purgarr/issues/4).
+
 ## Health Check
 
 Evictarr records the result of every check, and counts itself unhealthy when a check fails (for example, Sonarr can't be reached) or hasn't run for two of its intervals.
@@ -135,6 +150,9 @@ The minimum setup assumes Evictarr is running on the same host as your Arr stack
 | DOWNLOAD_CLIENT             | string | Download client (Options: `qbittorrent`, `rdtclient`, `deluge`, `transmission`, `sabnzbd`). `TORRENT_CLIENT` also works                                 | `qbittorrent`   | No       |
 | TORRENT_AGE                 | int    | Grace period in minutes before a download is included in a stalled purge check                                                                           | 5 (minutes)     | No       |
 | PURGE_FAILED_IMPORTS        | bool   | Remove and blocklist downloads Sonarr/Radarr couldn't import (see [Removing Failed Imports](#removing-failed-imports))                                     | False           | No       |
+| PURGE_EXTENSIONS            | bool   | Remove and blocklist downloads containing blocked file types (see [Removing Downloads With Blocked File Types](#removing-downloads-with-blocked-file-types))  | False | No |
+| PURGE_EXTENSIONS_INTERVAL   | int    | Time in seconds between blocked file type checks                                                                                                         | 60 (seconds)    | No       |
+| BLOCKED_EXTENSIONS          | string | File types to block, separated by commas                                                                                                                 | arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1 | No |
 | REQUEST_TIMEOUT             | int    | Seconds to wait for a download client, Sonarr or Radarr to respond                                                                                       | 30 (seconds)    | No       |
 | QBIT_URL                    | string | IP address or hostname to QBittorent webUI                                                                                                               | N/A             | qBittorrent |
 | QBIT_USER                   | string | QBittorrent username                                                                                                                                     | admin           | No       |

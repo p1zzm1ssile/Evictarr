@@ -25,6 +25,10 @@ def main():
             daemon=True,
         ).start()
 
+    if config.purge_extensions:
+        logger.log("STARTUP", "Starting blocked file type Evictarr daemon")
+        threading.Thread(target=d.extension_evictarr, daemon=True).start()
+
     if config.purge_stalled or config.purge_failed_imports:
         stalled_daemons = [
             {"service": "sonarr", "url": config.sonarr_url},

@@ -100,13 +100,20 @@ class QBittorrentClient:
 
         return results
 
-    def remove_torrents(self, hashes: list):
+    def get_files(self, torrent_id: str) -> list:
+        response = self.request("GET", "torrents/files", params={"hash": torrent_id})
+        return [f["name"] for f in response.json()]
+
+    def remove_torrents(self, hashes: list, delete_files: bool = None):
+        if delete_files is None:
+            delete_files = config.delete_files
+
         self.request(
             "POST",
             "torrents/delete",
             data={
                 "hashes": "|".join(hashes),
-                "deleteFiles": str(config.delete_files).lower(),
+                "deleteFiles": str(delete_files).lower(),
             },
         )
 
