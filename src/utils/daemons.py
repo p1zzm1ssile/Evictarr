@@ -5,6 +5,7 @@ import utils.status as status
 import sys
 from utils.logger import *
 from utils.webui import *
+from utils.files import match_file
 from services.sonarr import Sonarr
 from services.radarr import Radarr
 from services.qbittorrent import QBittorrentClient
@@ -40,7 +41,6 @@ class Daemons:
     def __init__(self):
         self.sonarr = Sonarr()
         self.radarr = Radarr()
-        self.file_cache = {}  # download id -> file names, which don't change once known
 
         match config.torrent_client.lower():
             case "qbittorrent" | "rdtclient":
@@ -54,6 +54,12 @@ class Daemons:
             case _:
                 logger.critical(f"Unsupported download client: {config.torrent_client}")
                 sys.exit(1)
+
+        if config.unknown_file_groups:
+            logger.warning(
+                f"Unknown file group(s) {', '.join(config.unknown_file_groups)}, "
+                f"choose from {', '.join('@' + g for g in config.FILE_GROUPS)}"
+            )
 
         try:
             self.torrent_client_version = self.torrent_client.version()
@@ -236,10 +242,15 @@ class Daemons:
         return not errors, "; ".join(results + errors)
 
     def purge_blocked_files(self, service: str, arr, queue: list):
-        """Remove downloads containing blocked file types, such as .arj or .lnk.
+        """Reject or trim downloads containing blocked or skipped files.
 
         Only downloads Sonarr/Radarr are tracking are checked. A season pack has
         one queue item per episode, all sharing the same download id.
+
+        Blocked files (e.g. .arj, .lnk) get the whole download rejected: it is
+        blocklisted, removed with its files, and a replacement is searched for.
+        Skipped files (e.g. samples) are just not downloaded. If nothing would be
+        left after skipping, the download is rejected instead.
         """
         tracked = {}
         for q in queue:
@@ -248,7 +259,8 @@ class Daemons:
                 tracked.setdefault(download_id, q)
 
         downloads = {t["id"].lower(): t for t in self.torrent_client.get_torrents()}
-        blocked = []
+        rejected = []
+        skipped = 0
 
         for download_id, q in tracked.items():
             t = downloads.get(download_id)
@@ -256,45 +268,65 @@ class Daemons:
                 continue
 
             # A magnet link has no file list until its metadata arrives
-            files = self.file_cache.get(download_id) or self.torrent_client.get_files(t["id"])
-            if files:
-                self.file_cache[download_id] = files
+            files = self.torrent_client.get_files(t["id"])
+            if not files:
+                continue
 
-            matches = sorted(
+            # Checked whether or not a file is set to download: the client may
+            # already be skipping a bad file while the Arr sees a finished download
+            blocked = sorted(
                 {
-                    ext
+                    m
                     for f in files
-                    for ext in config.blocked_extensions
-                    if f.lower().endswith(f".{ext}")
+                    if (m := match_file(f["name"], config.blocked_extensions, config.blocked_names))
                 }
             )
-            if matches:
-                blocked.append((t, q, matches))
+            if blocked:
+                rejected.append((t, q, f"blocked file(s) {', '.join(blocked)}"))
+                continue
 
-        if not blocked:
-            return f"no blocked file types in {service.capitalize()} downloads"
+            to_skip = [
+                f
+                for f in files
+                if f["wanted"]
+                and match_file(f["name"], config.skipped_extensions, config.skipped_names)
+            ]
+            if not to_skip:
+                continue
 
-        blocklisted = 0
-        for n, (t, q, matches) in enumerate(blocked, start=1):
-            found = ", ".join(f".{m}" for m in matches)
-            logger.log(
-                "ACTION",
-                f"({n}/{len(blocked)}) Purging download with blocked file type(s) {found}: {t['name']}",
+            if all(not f["wanted"] or f in to_skip for f in files):
+                rejected.append((t, q, "nothing left to download after skipping files"))
+                continue
+
+            names = ", ".join(f["name"].replace("\\", "/").rsplit("/", 1)[-1] for f in to_skip)
+            logger.log("ACTION", f"Skipping {len(to_skip)} file(s) in {t['name']}: {names}")
+            self.torrent_client.skip_files(t["id"], to_skip)
+            skipped += len(to_skip)
+
+        results = []
+        if skipped:
+            results.append(f"skipped {skipped} file(s)")
+
+        if rejected:
+            blocklisted = 0
+            for n, (t, q, reason) in enumerate(rejected, start=1):
+                logger.log(
+                    "ACTION", f"({n}/{len(rejected)}) Rejecting download ({reason}): {t['name']}"
+                )
+                # Blocklist first, while the release is still in the queue, so the
+                # Arr searches for another release instead of treating this one as done
+                if arr.block_release(q["title"], q["id"]):
+                    blocklisted += 1
+
+            # Always delete the data: blocked files may be malware
+            self.torrent_client.remove_torrents(
+                [t["id"] for t, _, _ in rejected], delete_files=True
             )
-            # Blocklist first, while the release is still in the queue, so the
-            # Arr searches for another release instead of treating this one as done
-            if arr.block_release(q["title"], q["id"]):
-                blocklisted += 1
+            results.append(
+                f"rejected {len(rejected)} download(s), blocklisted {blocklisted} in {service.capitalize()}"
+            )
 
-        # Always delete the data: these files may be malware
-        self.torrent_client.remove_torrents([t["id"] for t, _, _ in blocked], delete_files=True)
-        for t, _, _ in blocked:
-            self.file_cache.pop(t["id"].lower(), None)
-
-        return (
-            f"purged {len(blocked)} download(s) with blocked file types, "
-            f"blocklisted {blocklisted} in {service.capitalize()}"
-        )
+        return "; ".join(results) or f"no blocked files in {service.capitalize()} downloads"
 
     def webui(self):
         server_address = ("", config.web_port)

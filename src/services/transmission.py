@@ -102,9 +102,19 @@ class TransmissionClient:
 
     def get_files(self, torrent_id: str) -> list:
         torrents = self.call(
-            "torrent-get", {"ids": [torrent_id], "fields": ["files"]}
+            "torrent-get", {"ids": [torrent_id], "fields": ["files", "fileStats"]}
         ).get("torrents", [])
-        return [f["name"] for t in torrents for f in t.get("files", [])]
+        return [
+            {"index": i, "name": f["name"], "wanted": stats.get("wanted", True)}
+            for t in torrents
+            for i, (f, stats) in enumerate(zip(t.get("files", []), t.get("fileStats", [])))
+        ]
+
+    def skip_files(self, torrent_id: str, files: list):
+        self.call(
+            "torrent-set",
+            {"ids": [torrent_id], "files-unwanted": [f["index"] for f in files]},
+        )
 
     def remove_torrents(self, hashes: list, delete_files: bool = None):
         if delete_files is None:

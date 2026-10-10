@@ -93,7 +93,15 @@ class SABnzbdClient:
         return results
 
     def get_files(self, torrent_id: str) -> list:
-        return [f.get("filename", "") for f in self.call("get_files", value=torrent_id).get("files", [])]
+        return [
+            {"index": f.get("nzf_id"), "name": f.get("filename", ""), "wanted": True}
+            for f in self.call("get_files", value=torrent_id).get("files", [])
+        ]
+
+    def skip_files(self, torrent_id: str, files: list):
+        # Usenet files can't be paused individually, so they are dropped from the job
+        for f in files:
+            self.call("queue", name="delete_nzf", value=torrent_id, value2=f["index"])
 
     def remove_torrents(self, ids: list, delete_files: bool = None):
         if delete_files is None:

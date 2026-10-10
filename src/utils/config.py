@@ -20,15 +20,46 @@ block_stalled_torrents = os.getenv("BLOCK_STALLED_TORRENTS", "True").lower() == 
 purge_imported = os.getenv("PURGE_IMPORTED", "True").lower() == "true"
 purge_imported_interval = int(os.getenv("PURGE_IMPORTED_INTERVAL", 600))
 purge_failed_imports = os.getenv("PURGE_FAILED_IMPORTS", "False").lower() == "true"
-purge_extensions = os.getenv("PURGE_EXTENSIONS", "False").lower() == "true"
+# PURGE_FILES is an alias, since names can be filtered as well as extensions
+purge_extensions = (
+    os.getenv("PURGE_FILES") or os.getenv("PURGE_EXTENSIONS", "False")
+).lower() == "true"
 purge_extensions_interval = int(os.getenv("PURGE_EXTENSIONS_INTERVAL", 60))
-# Archives (rar, zip, 7z) aren't blocked by default, since many genuine releases use them
-blocked_extensions = [
-    e.lower().lstrip(".")
-    for e in split_labels(
-        os.getenv("BLOCKED_EXTENSIONS", "arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1")
-    )
-]
+
+# Ready-made groups that can be used in the extension settings, e.g. "@archives,@roms"
+FILE_GROUPS = {
+    "malware": "arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1",
+    "executables": "exe,msi,bat,cmd,com,scr,pif,vbs,ps1,jar,apk,dmg",
+    "archives": "rar,zip,7z,tar,gz,bz2,xz,arj,r[0-9][0-9],[0-9][0-9][0-9]",
+    "disc-images": "iso,img,bin,cue,nrg,mdf,mds",
+    "roms": "rom,nes,sfc,smc,gb,gbc,gba,n64,z64,v64,nds,3ds,cia,xci,nsp,wbfs,gcm,chd,pbp",
+}
+unknown_file_groups = []
+
+
+def parse_extensions(value):
+    extensions = set()
+    for item in split_labels(value):
+        item = item.lower().lstrip(".")
+        if item.startswith("@"):
+            group = FILE_GROUPS.get(item[1:])
+            if group is None:
+                unknown_file_groups.append(item)
+                continue
+            extensions.update(group.split(","))
+        else:
+            extensions.add(item)
+    return sorted(extensions)
+
+
+# Files that get the whole download rejected: blocklisted, removed and replaced.
+# Archives aren't blocked by default, since many genuine releases use them.
+blocked_extensions = parse_extensions(os.getenv("BLOCKED_EXTENSIONS", "@malware"))
+blocked_names = [n.lower() for n in split_labels(os.getenv("BLOCKED_NAMES", ""))]
+
+# Files that are just skipped (not downloaded), keeping the rest of the download
+skipped_extensions = parse_extensions(os.getenv("SKIPPED_EXTENSIONS", ""))
+skipped_names = [n.lower() for n in split_labels(os.getenv("SKIPPED_NAMES", ""))]
 delete_files = os.getenv("DELETE_FILES", "True").lower() == "true"
 ignore_other_categories = (
     os.getenv("IGNORE_OTHER_CATEGORIES", "False").lower() == "true"

@@ -107,8 +107,25 @@ class DelugeClient:
         return results
 
     def get_files(self, torrent_id: str) -> list:
-        status = self.call("core.get_torrent_status", [torrent_id, ["files"]])
-        return [f["path"] for f in (status or {}).get("files", [])]
+        status = self.call(
+            "core.get_torrent_status", [torrent_id, ["files", "file_priorities"]]
+        ) or {}
+        priorities = status.get("file_priorities") or []
+        return [
+            {
+                "index": f["index"],
+                "name": f["path"],
+                "wanted": f["index"] >= len(priorities) or priorities[f["index"]] != 0,
+            }
+            for f in status.get("files", [])
+        ]
+
+    def skip_files(self, torrent_id: str, files: list):
+        status = self.call("core.get_torrent_status", [torrent_id, ["file_priorities"]])
+        priorities = list(status["file_priorities"])
+        for f in files:
+            priorities[f["index"]] = 0
+        self.call("core.set_torrent_options", [[torrent_id], {"file_priorities": priorities}])
 
     def remove_torrents(self, hashes: list, delete_files: bool = None):
         if delete_files is None:

@@ -9,7 +9,8 @@ Evictarr is a lightweight companion to your Arr stack that keeps your download c
 * Removes downloads once Sonarr or Radarr has imported them.
 * Finds stalled downloads, blocklists them in Sonarr/Radarr and searches for a replacement.
 * Optionally clears downloads that Sonarr/Radarr couldn't import.
-* Optionally removes downloads containing dangerous file types such as `.arj` and `.lnk`, blocklists them and searches for a replacement.
+* Optionally rejects downloads containing dangerous or unwanted files (`.arj`, `.lnk`, `.exe`, RARs, ISOs, ROMs and more), blocklists them and searches for a replacement.
+* Optionally skips files you don't want, such as samples, while keeping the rest of the download.
 * Can be limited to Sonarr's and Radarr's own categories, leaving everything else in your client alone.
 * Health status in the web UI, at `/health`, and as a Docker health check.
 
@@ -104,19 +105,43 @@ Set `PURGE_FAILED_IMPORTS=True` to clear downloads that finished but that Sonarr
 
 This is off by default because it also catches downloads waiting for you to import them by hand. If you use manual import, leave it off.
 
-## Removing Downloads With Blocked File Types
+## Blocking and Skipping Files
 
-Some public torrents carry malware in files like `.arj` or `.lnk`. Even if your torrent client skips those files, Sonarr and Radarr still see the download as finished and never look for another release.
+Some public torrents carry malware in files like `.arj` or `.lnk`. Even if your torrent client skips those files, Sonarr and Radarr still see the download as finished and never look for another release. Other releases arrive as RARs, disc images or something else you don't want, or come with sample files you'd rather not download.
 
-Set `PURGE_EXTENSIONS=True` and Evictarr checks the file list of every download Sonarr and Radarr are tracking (it never touches anything else) every `PURGE_EXTENSIONS_INTERVAL` seconds. When a download contains a blocked file type, Evictarr:
+Set `PURGE_FILES=True` (or `PURGE_EXTENSIONS=True`, which does the same) and Evictarr checks the file list of every download Sonarr and Radarr are tracking every `PURGE_EXTENSIONS_INTERVAL` seconds. It never touches anything else in your client. There are two actions:
+
+**Block: reject the whole download.** When a download contains a file matching `BLOCKED_EXTENSIONS` or `BLOCKED_NAMES`, Evictarr:
 
 1. Adds the release to the Sonarr/Radarr blocklist, so they search for another (if `RETRY_SEARCH` is on).
 2. Removes the download from your client.
 3. Deletes its files, even if `DELETE_FILES` is off, since they may be malware.
 
-Set the file types with `BLOCKED_EXTENSIONS`, separated by commas, with or without the dot. The default is `arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1`. Archives like `rar`, `zip` and `7z` aren't in the default list because many genuine releases are packed in them. Add them only if you're sure.
+**Skip: just don't download those files.** Files matching `SKIPPED_EXTENSIONS` or `SKIPPED_NAMES` are switched off in your client and the rest of the download carries on, so you can drop sample files without losing the release. If nothing would be left to download, the download is rejected instead. On SABnzbd, skipped files are removed from the job.
 
-This works with every supported download client, and was requested by [binhex](https://github.com/binhex) in [Purgarr #4](https://github.com/steveharsant/purgarr/issues/4).
+**Extensions** are separated by commas, with or without the dot, and can use wildcards (`r[0-9][0-9]` matches `.r00` to `.r99`). You can also use these ready-made groups:
+
+| Group | Extensions |
+|-------|------------|
+| `@malware` | arj, lnk, exe, bat, cmd, com, scr, pif, vbs, ps1 |
+| `@executables` | exe, msi, bat, cmd, com, scr, pif, vbs, ps1, jar, apk, dmg |
+| `@archives` | rar, zip, 7z, tar, gz, bz2, xz, arj, .r00 to .r99, .001 to .999 |
+| `@disc-images` | iso, img, bin, cue, nrg, mdf, mds |
+| `@roms` | rom, nes, sfc, smc, gb, gbc, gba, n64, z64, v64, nds, 3ds, cia, xci, nsp, wbfs, gcm, chd, pbp |
+
+**Names** are wildcard patterns, separated by commas, matched against the file name and ignoring case: `*sample*` matches `Movie-sample.mkv`. A pattern containing `/` is matched against the file's path inside the download instead, so `*/extras/*` matches anything in an `Extras` folder.
+
+Example:
+
+```
+PURGE_FILES=True
+BLOCKED_EXTENSIONS=@malware,@archives,@disc-images,@roms
+SKIPPED_NAMES=*sample*
+```
+
+`BLOCKED_EXTENSIONS` defaults to `@malware`. Archives aren't blocked by default because many genuine releases come packed in RARs, so only add `@archives` if you're happy for those to be replaced.
+
+Blocking was requested by [binhex](https://github.com/binhex) in [Purgarr #4](https://github.com/steveharsant/purgarr/issues/4).
 
 ## Health Check
 
@@ -150,9 +175,12 @@ The minimum setup assumes Evictarr is running on the same host as your Arr stack
 | DOWNLOAD_CLIENT             | string | Download client (Options: `qbittorrent`, `rdtclient`, `deluge`, `transmission`, `sabnzbd`). `TORRENT_CLIENT` also works                                 | `qbittorrent`   | No       |
 | TORRENT_AGE                 | int    | Grace period in minutes before a download is included in a stalled purge check                                                                           | 5 (minutes)     | No       |
 | PURGE_FAILED_IMPORTS        | bool   | Remove and blocklist downloads Sonarr/Radarr couldn't import (see [Removing Failed Imports](#removing-failed-imports))                                     | False           | No       |
-| PURGE_EXTENSIONS            | bool   | Remove and blocklist downloads containing blocked file types (see [Removing Downloads With Blocked File Types](#removing-downloads-with-blocked-file-types))  | False | No |
-| PURGE_EXTENSIONS_INTERVAL   | int    | Time in seconds between blocked file type checks                                                                                                         | 60 (seconds)    | No       |
-| BLOCKED_EXTENSIONS          | string | File types to block, separated by commas                                                                                                                 | arj,lnk,exe,bat,cmd,com,scr,pif,vbs,ps1 | No |
+| PURGE_FILES                 | bool   | Turn on blocking and skipping files (see [Blocking and Skipping Files](#blocking-and-skipping-files)). `PURGE_EXTENSIONS` also works                       | False           | No       |
+| PURGE_EXTENSIONS_INTERVAL   | int    | Time in seconds between file checks                                                                                                                      | 60 (seconds)    | No       |
+| BLOCKED_EXTENSIONS          | string | File types that get a download rejected, separated by commas. Groups like `@archives` work                                                               | @malware        | No       |
+| BLOCKED_NAMES               | string | File name patterns that get a download rejected, e.g. `*password*`                                                                                       | N/A             | No       |
+| SKIPPED_EXTENSIONS          | string | File types to skip (not download), separated by commas. Groups like `@archives` work                                                                     | N/A             | No       |
+| SKIPPED_NAMES               | string | File name patterns to skip (not download), e.g. `*sample*`                                                                                               | N/A             | No       |
 | REQUEST_TIMEOUT             | int    | Seconds to wait for a download client, Sonarr or Radarr to respond                                                                                       | 30 (seconds)    | No       |
 | QBIT_URL                    | string | IP address or hostname to QBittorent webUI                                                                                                               | N/A             | qBittorrent |
 | QBIT_USER                   | string | QBittorrent username                                                                                                                                     | admin           | No       |

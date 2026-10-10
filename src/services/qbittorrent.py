@@ -102,7 +102,21 @@ class QBittorrentClient:
 
     def get_files(self, torrent_id: str) -> list:
         response = self.request("GET", "torrents/files", params={"hash": torrent_id})
-        return [f["name"] for f in response.json()]
+        return [
+            {"index": f.get("index", i), "name": f["name"], "wanted": f.get("priority", 1) != 0}
+            for i, f in enumerate(response.json())
+        ]
+
+    def skip_files(self, torrent_id: str, files: list):
+        self.request(
+            "POST",
+            "torrents/filePrio",
+            data={
+                "hash": torrent_id,
+                "id": "|".join(str(f["index"]) for f in files),
+                "priority": 0,
+            },
+        )
 
     def remove_torrents(self, hashes: list, delete_files: bool = None):
         if delete_files is None:
