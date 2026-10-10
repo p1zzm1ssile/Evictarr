@@ -12,7 +12,7 @@ def split_labels(value):
     return [l.strip() for l in value.split(",") if l.strip()]
 
 
-# Purgarr Behaviour
+# Evictarr Behaviour
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 purge_stalled = os.getenv("PURGE_STALLED", "True").lower() == "true"
 purge_stalled_interval = int(os.getenv("PURGE_STALLED_INTERVAL", 300))

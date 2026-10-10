@@ -50,7 +50,7 @@ if config.log_output in ["all", "stdout"]:
 
 if config.log_output in ["all", "web"]:
     logger.add(
-        "purgarr.log",
+        "evictarr.log",
         format="{time:YYYY-MM-DD HH:mm:ss} [{level}] {message}",
         filter=custom_filter,
         rotation="10 MB",

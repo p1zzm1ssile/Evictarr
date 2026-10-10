@@ -1,10 +1,14 @@
 # CHANGELOG
 
-## Unreleased
+## 0.3.0 (Evictarr)
+
+`October 10 2026`
+
+First release as Evictarr, a community-maintained fork of [Purgarr](https://github.com/steveharsant/purgarr) by Steve Harsant. Everything below 0.3.0 is Steve's original Purgarr history.
 
 ### Features
 
-* Added `IGNORE_OTHER_CATEGORIES` option. When `True`, the stalled purge only touches downloads whose category is listed in `SONARR_LABELS` (for Sonarr) or `RADARR_LABELS` (for Radarr), so torrents in any other category are never removed or blocklisted.
+* Added `IGNORE_OTHER_CATEGORIES` option. When `True`, the stalled purge only touches downloads whose category is listed in `SONARR_LABELS` (for Sonarr) or `RADARR_LABELS` (for Radarr), so downloads in any other category are never removed or blocklisted.
 
 * Added Deluge support (Deluge 1.3 and 2.x, through the Web UI). Set `DOWNLOAD_CLIENT=deluge` along with `DELUGE_URL` and `DELUGE_PASSWORD` ([#5](https://github.com/steveharsant/purgarr/issues/5)).
 * Added Transmission support. Set `DOWNLOAD_CLIENT=transmission` along with `TRANSMISSION_URL`, and `TRANSMISSION_USER`/`TRANSMISSION_PASSWORD` if needed ([#9](https://github.com/steveharsant/purgarr/issues/9)).

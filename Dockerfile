@@ -2,8 +2,10 @@
 # alpine container is outdated and has 5 HIGH CVEs...
 FROM alpine:latest
 
-LABEL author="steveharsant"
-LABEL org.opencontainers.image.description='Purgarr: Plunder the best, purge the rest!'
+LABEL author="p1zzm1ssile"
+LABEL org.opencontainers.image.source="https://github.com/p1zzm1ssile/Evictarr"
+LABEL original_author="steveharsant (Purgarr)"
+LABEL org.opencontainers.image.description='Evictarr: a maintained fork of Purgarr by Steve Harsant. Keeps your download client clean for Sonarr and Radarr.'
 
 WORKDIR /app
 COPY ./src .

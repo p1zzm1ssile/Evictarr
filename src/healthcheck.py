@@ -1,6 +1,6 @@
-"""Check whether Purgarr is working. Exits 0 when healthy, 1 when not.
+"""Check whether Evictarr is working. Exits 0 when healthy, 1 when not.
 
-Run it inside the container with: docker exec purgarr python healthcheck.py
+Run it inside the container with: docker exec evictarr python healthcheck.py
 """
 
 import sys
@@ -12,7 +12,7 @@ def main():
     try:
         result = health_from_file()
     except FileNotFoundError:
-        print(f"UNHEALTHY: {STATUS_FILE} not found, Purgarr has not started")
+        print(f"UNHEALTHY: {STATUS_FILE} not found, Evictarr has not started")
         return 1
 
     client = result["client"] or {}

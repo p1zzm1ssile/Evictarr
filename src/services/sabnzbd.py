@@ -9,7 +9,7 @@ class SABnzbdClient:
     """SABnzbd API client (Usenet).
 
     Usenet downloads have no stalled state and SABnzbd doesn't report when a
-    queue item was added, so Purgarr tracks progress itself: an active download
+    queue item was added, so Evictarr tracks progress itself: an active download
     whose remaining size hasn't changed for longer than TORRENT_AGE is stalled.
     """
 

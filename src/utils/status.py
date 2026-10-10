@@ -2,7 +2,7 @@ import json
 import threading
 import time
 
-STATUS_FILE = "purgarr-status.json"
+STATUS_FILE = "evictarr-status.json"
 
 # A check is overdue when it hasn't finished within two of its intervals
 GRACE_SECONDS = 60
@@ -43,7 +43,7 @@ def record(check: str, ok: bool, summary: str):
 
 
 def evaluate(status: dict, now: float = None) -> dict:
-    """Work out whether Purgarr is healthy from a status snapshot."""
+    """Work out whether Evictarr is healthy from a status snapshot."""
     now = now or time.time()
     problems = []
 

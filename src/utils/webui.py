@@ -7,7 +7,7 @@ import utils.config as config
 import utils.status as status
 import re
 
-LOG_FILE = "purgarr.log"
+LOG_FILE = "evictarr.log"
 
 
 class LogHandler(BaseHTTPRequestHandler):
@@ -74,7 +74,7 @@ class LogHandler(BaseHTTPRequestHandler):
         return f"""
 <html>
 <head>
-  <title>Purgarr Logs</title>
+  <title>Evictarr Logs</title>
   <style>
     body {{
       background: #1e1e2f;
@@ -153,7 +153,7 @@ class LogHandler(BaseHTTPRequestHandler):
         }})
         .catch(() => {{
           document.getElementById('status').className = 'status unhealthy';
-          document.getElementById('status-text').textContent = 'Purgarr is not responding';
+          document.getElementById('status-text').textContent = 'Evictarr is not responding';
         }});
     }}
 
@@ -163,7 +163,7 @@ class LogHandler(BaseHTTPRequestHandler):
   </script>
 </head>
 <body>
-  <h1>Purgarr Logs ({hostname})</h1>
+  <h1>Evictarr Logs ({hostname})</h1>
   <div id="status" class="status">
     <span class="status-dot"></span>
     <div>

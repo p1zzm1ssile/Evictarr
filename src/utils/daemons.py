@@ -89,7 +89,7 @@ class Daemons:
 
             time.sleep(interval)
 
-    def imported_purgarr(self):
+    def imported_evictarr(self):
         self.run_forever("imported", config.purge_imported_interval, self.purge_imported)
 
     def purge_imported(self):
@@ -106,7 +106,7 @@ class Daemons:
         self.torrent_client.remove_torrents([t["id"] for t in torrents])
         return True, f"purged {len(torrents)} imported download(s)"
 
-    def stalled_purgarr(self, service: str, url: str):
+    def stalled_evictarr(self, service: str, url: str):
         self.run_forever(
             service.lower(),
             config.purge_stalled_interval,

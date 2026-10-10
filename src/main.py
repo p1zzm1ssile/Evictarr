@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 def main():
     signal.signal(signal.SIGINT, handle_sigint)
@@ -14,14 +14,14 @@ def main():
     d = Daemons()
 
     if config.log_output in ["all", "web"]:
-        logger.log("STARTUP", "Starting Purgarr webUI daemon")
+        logger.log("STARTUP", "Starting Evictarr webUI daemon")
         server_thread = threading.Thread(target=d.webui, daemon=True)
         server_thread.start()
 
     if config.purge_imported:
-        logger.log("STARTUP", "Starting import Purgarr daemon")
+        logger.log("STARTUP", "Starting import Evictarr daemon")
         threading.Thread(
-            target=lambda: d.imported_purgarr(),
+            target=lambda: d.imported_evictarr(),
             daemon=True,
         ).start()
 
@@ -31,9 +31,9 @@ def main():
             {"service": "radarr", "url": config.radarr_url},
         ]
         for sd in stalled_daemons:
-            logger.log("STARTUP", f"Starting {sd['service']} Purgarr daemon")
+            logger.log("STARTUP", f"Starting {sd['service']} Evictarr daemon")
             threading.Thread(
-                target=d.stalled_purgarr,
+                target=d.stalled_evictarr,
                 kwargs={"service": sd["service"], "url": sd["url"]},
                 daemon=True,
             ).start()
@@ -46,7 +46,7 @@ def main():
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logger.info("Stopping Purgarr", True)
+        logger.info("Stopping Evictarr", True)
 
 
 def handle_sigint(signum, frame):
@@ -54,5 +54,5 @@ def handle_sigint(signum, frame):
 
 
 if __name__ == "__main__":
-    logger.info(f"Purgarr version {__version__} starting")
+    logger.info(f"Evictarr version {__version__} starting")
     main()
