@@ -6,14 +6,16 @@ from utils.logger import *
 
 
 class QBittorrentClient:
+    """qBittorrent Web API client. Also works with RDTClient, which copies this API."""
+
     def __init__(self):
         self.session = requests.Session()
-        self.sid = None
         self.last_sid_refresh = 0
+        self.warned_no_cookie = False
 
-    def authenticate(self):
+    def authenticate(self, force: bool = False):
         now = time.time()
-        if now - self.last_sid_refresh < config.qbit_token_refresh_interval:
+        if not force and now - self.last_sid_refresh < config.qbit_token_refresh_interval:
             return
 
         logger.info("Refreshing qBittorrent auth token")
@@ -23,31 +25,46 @@ class QBittorrentClient:
         try:
             self.session.cookies.clear()
             response = self.session.post(
-                f"{config.qbit_url}/auth/login", headers=headers, data=data
+                f"{config.qbit_url}/auth/login",
+                headers=headers,
+                data=data,
+                timeout=config.request_timeout,
             )
             response.raise_for_status()
         except Exception as e:
             logger.error(f"qBittorrent authentication failed | {e}")
             return
 
-        if not "SID" in response.cookies:
-            logger.error("SID cookie not found in response")
+        if response.text.strip() == "Fails.":
+            logger.error("qBittorrent authentication failed, check QBIT_USER and QBIT_PASSWORD")
             return
 
-        self.sid = response.cookies["SID"]
+        # The session keeps whatever cookie the client sets: SID on older qBittorrent,
+        # QBT_SID_<port> on qBittorrent 5.2+, and none at all on RDTClient when its
+        # authentication is turned off.
+        if not self.session.cookies and not self.warned_no_cookie:
+            logger.info("Logged in without a session cookie (authentication disabled)")
+            self.warned_no_cookie = True
+
         self.last_sid_refresh = now
 
-    def get_torrents(self) -> list:
+    def request(self, method: str, endpoint: str, **kwargs):
+        kwargs.setdefault("timeout", config.request_timeout)
         self.authenticate()
+        response = self.session.request(method, f"{config.qbit_url}/{endpoint}", **kwargs)
 
-        try:
-            response = self.session.get(
-                f"{config.qbit_url}/torrents/info", cookies={"SID": self.sid}
+        # The session expired before the refresh interval was up, log in again
+        if response.status_code in (401, 403):
+            self.authenticate(force=True)
+            response = self.session.request(
+                method, f"{config.qbit_url}/{endpoint}", **kwargs
             )
-        except Exception as e:
-            logger.error(f"Failed to get torrents| {e}")
-            return []
 
+        response.raise_for_status()
+        return response
+
+    def get_torrents(self) -> list:
+        response = self.request("GET", "torrents/info")
         results = []
 
         for t in response.json():
@@ -56,13 +73,13 @@ class QBittorrentClient:
             age = (now - added).total_seconds() / 60
 
             match t["state"]:
-                case "error":
+                case "error" | "missingFiles":
                     state = "error"
-                case "pausedUP" | "queuedUP" | "uploading" | "stalledUP" | "stoppedUP":
+                case "pausedUP" | "queuedUP" | "uploading" | "stalledUP" | "stoppedUP" | "forcedUP":
                     state = "finished"
-                case "downloading" | "checkingUP" | "checkingDL":
+                case "downloading" | "forcedDL" | "checkingUP" | "checkingDL" | "moving":
                     state = "processing"
-                case "pausedDL":
+                case "pausedDL" | "stoppedDL":
                     state = "paused"
                 case "queuedDL":
                     state = "queued"
@@ -84,24 +101,14 @@ class QBittorrentClient:
         return results
 
     def remove_torrents(self, hashes: list):
-        self.authenticate()
-        hash_str = "|".join(hashes)
-        try:
-            self.session.post(
-                f"{config.qbit_url}/torrents/delete",
-                cookies={"SID": self.sid},
-                data={"hashes": hash_str, "deleteFiles": config.delete_files},
-            )
-        except Exception as e:
-            logger.error(f"Failed to remove torrents | {e}")
+        self.request(
+            "POST",
+            "torrents/delete",
+            data={
+                "hashes": "|".join(hashes),
+                "deleteFiles": str(config.delete_files).lower(),
+            },
+        )
 
     def version(self) -> str:
-        self.authenticate()
-        try:
-            response = self.session.get(
-                f"{config.qbit_url}/app/version", cookies={"SID": self.sid}
-            )
-            return response.text
-        except Exception as e:
-            logger.error(f"Failed to fetch version | {e}")
-            return "unknown"
+        return self.request("GET", "app/version").text

@@ -10,4 +10,6 @@ COPY ./src .
 
 RUN apk add python3 py3-pip
 RUN pip install --no-cache-dir --break-system-packages -r /app/requirements.txt
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+  CMD ["python", "healthcheck.py"]
 CMD ["python", "main.py"]

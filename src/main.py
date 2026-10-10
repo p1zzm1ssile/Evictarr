@@ -25,17 +25,16 @@ def main():
             daemon=True,
         ).start()
 
-    if config.purge_stalled:
+    if config.purge_stalled or config.purge_failed_imports:
         stalled_daemons = [
             {"service": "sonarr", "url": config.sonarr_url},
             {"service": "radarr", "url": config.radarr_url},
         ]
         for sd in stalled_daemons:
-            logger.log("STARTUP", f"Starting {sd['service']} stalled Purgarr daemon")
+            logger.log("STARTUP", f"Starting {sd['service']} Purgarr daemon")
             threading.Thread(
-                target=lambda: d.stalled_purgarr(
-                    service=f"{sd['service']}", url=f"{sd['url']}"
-                ),
+                target=d.stalled_purgarr,
+                kwargs={"service": sd["service"], "url": sd["url"]},
                 daemon=True,
             ).start()
 

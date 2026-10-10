@@ -29,3 +29,13 @@ class Sonarr(Base):
             title=title,
             release_id=release_id,
         )
+
+    def remove_failed_import(self, title, release_id):
+        return super().remove_from_queue(
+            url=config.sonarr_url,
+            api_key=config.sonarr_api_key,
+            title=title,
+            release_id=release_id,
+            remove_from_client=True,
+            blocklist=True,
+        )
