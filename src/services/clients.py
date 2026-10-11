@@ -58,22 +58,44 @@ class MultiClient:
             self.errors = errors
         return results
 
-    def _client_for(self, torrent_id: str):
+    def _owner(self, torrent_id: str):
         name = self.owner.get(torrent_id.lower())
         if name is None:
             # Not seen yet: refresh the list once to find out who owns it
             self.get_torrents()
             name = self.owner.get(torrent_id.lower())
+        return name
+
+    def _client_for(self, torrent_id: str):
+        name = self._owner(torrent_id)
         if name is None:
             raise Exception(f"no download client has download {torrent_id}")
         return self.clients[name]
 
     def remove_torrents(self, ids: list, delete_files: bool = None):
+        """Remove downloads from whichever clients hold them.
+
+        A download that's already gone is skipped, and one client failing doesn't
+        stop the removals from the others. Any failures are raised at the end.
+        """
         by_client = {}
         for torrent_id in ids:
-            by_client.setdefault(self._client_for(torrent_id), []).append(torrent_id)
-        for client, client_ids in by_client.items():
-            client.remove_torrents(client_ids, delete_files=delete_files)
+            name = self.owner.get(torrent_id.lower())
+            if name is None:
+                continue  # already removed, e.g. by hand
+            by_client.setdefault(name, []).append(torrent_id)
+
+        failures = []
+        for name, client_ids in by_client.items():
+            try:
+                self.clients[name].remove_torrents(client_ids, delete_files=delete_files)
+                with self.lock:
+                    for torrent_id in client_ids:
+                        self.owner.pop(torrent_id.lower(), None)
+            except Exception as e:
+                failures.append(f"{config.CLIENTS[name]}: {e}")
+        if failures:
+            raise Exception("; ".join(failures))
 
     def get_files(self, torrent_id: str) -> list:
         return self._client_for(torrent_id).get_files(torrent_id)

@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 0.4.1
+
+`October 11 2026`
+
+Fixes from a code review of 0.4.0.
+
+### Security
+
+* Creating the first account now needs a one-time **setup code** printed in Evictarr's log. Being on the local network wasn't proof enough: a reverse proxy that adds no forwarding headers, or Docker's port forwarding, can make an internet visitor look local.
+* **Skip login on my local network** now only applies to the networks listed in the new **My local networks** setting (default `192.168.0.0/16, 10.0.0.0/8`), which leaves out Docker's own range.
+* A saved password or API key is no longer reused when its address changes, in **Test connection** or when saving. Before, it could be sent to any server typed into the address field.
+* The login lockout counts each attempt before checking the password, so many attempts sent at once can't get past it. Failures are forgotten after 15 minutes.
+
+### Bugfixes
+
+* Saving settings could briefly expose half-applied values to a running check. In the worst case, a name pattern like `*sample*` was read as text, matched every file, and every tracked download was rejected. Settings are now worked out in full before any of them change.
+* With `IGNORE_OTHER_CATEGORIES` off, the Sonarr check could remove Radarr's stalled downloads (and the reverse) before they were blocklisted, so no replacement was searched for. Each check now only removes its own downloads, and ones belonging to neither are handled once.
+* A download removed by hand between being listed and being purged no longer stops the rest of the batch from being removed, and a failure in one client doesn't stop removals from the others.
+* The health status file is written atomically, so the Docker health check can't read half a file, and an unreadable file is reported cleanly.
+* A damaged `settings.json` is moved aside and reported, instead of being silently replaced by defaults on the next save.
+* An `IMPORT_LABELS` environment variable no longer overrides the post-import categories set in the web UI. It's copied into them on first start instead.
+* The Logs page only reads the end of the log file, and the account file is read once instead of on every request.
+
+
 ## 0.4.0
 
 `October 11 2026`

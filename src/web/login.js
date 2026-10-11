@@ -35,6 +35,7 @@ form.addEventListener("submit", async (event) => {
   const username = form.username.value.trim();
   const password = form.password.value;
 
+  if (mode === "setup" && !form.code.value.trim()) { errorBox.textContent = "Enter the setup code from Evictarr's log"; return; }
   if (!username) { errorBox.textContent = "Enter a username"; return; }
   if (mode === "setup") {
     const missing = RULES.filter(([, check]) => !check(password));
@@ -48,7 +49,7 @@ form.addEventListener("submit", async (event) => {
     const response = await fetch(mode === "setup" ? "/api/setup" : "/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Evictarr": "1" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(mode === "setup" ? { code: form.code.value.trim(), username, password } : { username, password }),
     });
     const data = await response.json().catch(() => ({}));
     if (response.ok) { window.location.href = "/"; return; }

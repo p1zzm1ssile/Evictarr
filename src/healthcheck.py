@@ -14,6 +14,9 @@ def main():
     except FileNotFoundError:
         print(f"UNHEALTHY: {STATUS_FILE} not found, Evictarr has not started")
         return 1
+    except (OSError, ValueError) as e:
+        print(f"UNHEALTHY: couldn't read {STATUS_FILE} ({e})")
+        return 1
 
     client = result["client"] or {}
     print(f"{'HEALTHY' if result['healthy'] else 'UNHEALTHY'}", end="")

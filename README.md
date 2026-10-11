@@ -56,9 +56,10 @@ Change the template's **Repository** to `ghcr.io/p1zzm1ssile/evictarr:latest` an
 
 ### First run
 
-1. Open `http://your-server:9891` **from your home network**. The first account can only be created from your local network.
-2. Create your login. The password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character.
-3. Go to **Settings**. Tick your download client(s), add Sonarr and Radarr, choose what to purge and block. Use **Test connection** to check each one, and **Save** on each tab.
+1. Open `http://your-server:9891`.
+2. Enter the **setup code** from Evictarr's log. It's printed when Evictarr starts (in Unraid, click the Evictarr icon and choose **Logs**; with Docker, run `docker logs evictarr`). This stops anyone else on your network, or anyone reaching it through a misconfigured proxy, from creating the account before you.
+3. Create your login. The password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character.
+4. Go to **Settings**. Tick your download client(s), add Sonarr and Radarr, choose what to purge and block. Use **Test connection** to check each one, and **Save** on each tab.
 
 Coming from Purgarr or an earlier Evictarr? Your existing environment variables are copied into the settings on first start, so nothing needs re-entering. After that, the web UI is where settings live.
 
@@ -81,10 +82,12 @@ Changes take effect as soon as you save, without a restart.
 
 * The password is stored as a scrypt hash in `/config/auth.json`, never in plain text.
 * After 5 wrong passwords, that address is locked out for 5 minutes.
-* **Skip login on my local network** (Settings > General) lets devices on your LAN in without a password. It never applies to requests that arrive through a reverse proxy, since behind a proxy every visitor appears to come from the proxy's own local address.
+* **Skip login on my local network** (Settings > General) lets devices on the networks you list in **My local networks** in without a password. The default is `192.168.0.0/16, 10.0.0.0/8`. Docker's own range (`172.16.0.0/12`) isn't included, because traffic forwarded by Docker can appear to come from there. The bypass never applies to requests that arrive through a reverse proxy.
+* Changing a download client's, Sonarr's, Radarr's or an indexer's address needs its password or API key entered again, so a saved key can't be sent somewhere new.
 * Saved passwords and API keys are never sent back to the browser.
 * `settings.json` and `auth.json` are only readable by the account Evictarr runs as.
-* **Forgotten your password?** Delete `auth.json` from the config folder and restart Evictarr. It will ask you to create a login again. Your settings are kept.
+* **Forgotten your password?** Delete `auth.json` from the config folder and restart Evictarr. It will ask you to create a login again, with a new setup code in the log. Your settings are kept.
+* If `settings.json` is damaged (for example by a hand edit), Evictarr moves it aside as `settings.json.broken-<time>`, logs an error, and starts with defaults, so nothing is silently overwritten.
 
 ## Download Clients
 

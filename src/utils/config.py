@@ -76,6 +76,18 @@ FILE_GROUPS = {
 unknown_file_groups = []
 
 
+def parse_networks(value):
+    import ipaddress
+
+    networks = []
+    for item in split_labels(value):
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            pass
+    return networks
+
+
 def parse_extensions(value):
     extensions = set()
     for item in split_labels(value):
@@ -162,7 +174,11 @@ FIELDS = [
       section="Logs", min=50, max=10000),
     F("auth_lan_bypass", "general", "Skip login on my local network", "bool",
       env_bool("AUTH_LAN_BYPASS", default=False), section="Login",
-      help="Don't ask for a password from private (LAN) addresses. Never applies to requests that come through a reverse proxy."),
+      help="Don't ask for a password from the networks below. Never applies to requests that come through a reverse proxy."),
+    F("local_networks", "general", "My local networks", "labels",
+      env_str("LOCAL_NETWORKS", default="192.168.0.0/16, 10.0.0.0/8"), section="Login",
+      help="Addresses that skip the login, separated by commas. 172.16.0.0/12 isn't included by default because Docker uses it, "
+           "and traffic forwarded by Docker can appear to come from there."),
 
     # Blocking
     F("purge_extensions", "blocking", "Turn on file blocking", "bool",
@@ -198,8 +214,8 @@ FIELDS = [
             F(f"{arr}_labels", arr, "Categories", "labels",
               env_str(f"{arr.upper()}_LABELS", default=labels), section="Categories",
               help="The category (or label) set in its download client settings. Separate several with commas."),
-            F(f"{arr}_imported_label", arr, "Post-import category", "text",
-              env_str(f"{arr.upper()}_IMPORTED_LABEL", default=f"{arr}-imported"), section="Categories",
+            F(f"{arr}_imported_label", arr, "Post-import category", "labels",
+              env_str("IMPORT_LABELS", f"{arr.upper()}_IMPORTED_LABEL", default=f"{arr}-imported"), section="Categories",
               help="Downloads moved to this category after import are removed."),
         )
     ],
@@ -266,7 +282,30 @@ FIELDS = [
 FIELDS_BY_KEY = {f["key"]: f for f in FIELDS}
 SECRET_KEYS = {f["key"] for f in FIELDS if f["type"] == "secret"}
 
+# The address each secret is sent to. A saved secret is never reused with a new
+# address, or anyone with access could send it to a server of their choosing.
+SECRET_URLS = {
+    "qbit_pass": "qbit_url", "rdt_pass": "rdt_url", "deluge_pass": "deluge_url",
+    "transmission_pass": "transmission_url", "sabnzbd_api_key": "sabnzbd_url",
+    "sonarr_api_key": "sonarr_url", "radarr_api_key": "radarr_url",
+    "prowlarr_api_key": "prowlarr_url", "jackett_api_key": "jackett_url",
+}
+
+
+def secrets_needing_reentry(changes: dict) -> dict:
+    """{secret key: reason} for saved secrets whose address is being changed."""
+    problems = {}
+    for secret, url in SECRET_URLS.items():
+        new_url = changes.get(url)
+        if new_url is None or str(new_url).strip() == str(values.get(url, "")).strip():
+            continue
+        if changes.get(secret) is None and values.get(secret):
+            label = FIELDS_BY_KEY[secret]["label"]
+            problems[secret] = f"{label}: enter it again, since the address changed"
+    return problems
+
 _lock = threading.RLock()
+load_error = None
 values = {f["key"]: f["default"] for f in FIELDS}
 
 
@@ -298,42 +337,58 @@ def coerce(field, value):
         raise ValueError("is too long")
     if t == "text" and field["key"].endswith("_url") and any(c in value for c in " <>\"'"):
         raise ValueError("isn't a valid address")
+    if field["key"] == "local_networks":
+        import ipaddress
+        for item in split_labels(value):
+            try:
+                ipaddress.ip_network(item, strict=False)
+            except ValueError:
+                raise ValueError(f"has an invalid network: {item} (use a form like 192.168.1.0/24)")
     return value
 
 
-def apply(target, raw):
-    """Set the attributes the rest of Evictarr reads, on target, from raw values."""
-    for key, value in raw.items():
-        setattr(target, key, value)
+def resolve(raw):
+    """Every attribute the rest of Evictarr reads, worked out from the raw settings."""
+    resolved = dict(raw)
+    resolved["enabled_clients"] = [c for c in CLIENTS if raw.get(f"client_{c}")]
+    resolved["torrent_client"] = ", ".join(resolved["enabled_clients"]) or "none"
 
-    target.log_level = raw["log_level"]
-    target.enabled_clients = [c for c in CLIENTS if raw.get(f"client_{c}")]
-    target.torrent_client = ", ".join(target.enabled_clients) or "none"
-
-    target.qbit_url = ensure_http(raw["qbit_url"]).rstrip("/") + "/api/v2"
-    target.rdt_url = ensure_http(raw["rdt_url"]).rstrip("/") + "/api/v2"
-    target.deluge_url = ensure_http(raw["deluge_url"]).rstrip("/")
+    resolved["qbit_url"] = ensure_http(raw["qbit_url"]).rstrip("/") + "/api/v2"
+    resolved["rdt_url"] = ensure_http(raw["rdt_url"]).rstrip("/") + "/api/v2"
+    resolved["deluge_url"] = ensure_http(raw["deluge_url"]).rstrip("/")
     transmission_url = ensure_http(raw["transmission_url"]).rstrip("/")
     if not transmission_url.endswith("/rpc"):
         transmission_url += "/transmission/rpc"
-    target.transmission_url = transmission_url
-    target.sabnzbd_url = ensure_http(raw["sabnzbd_url"]).rstrip("/")
+    resolved["transmission_url"] = transmission_url
+    resolved["sabnzbd_url"] = ensure_http(raw["sabnzbd_url"]).rstrip("/")
 
     for arr in ("sonarr", "radarr"):
-        setattr(target, f"{arr}_url", ensure_http(raw[f"{arr}_url"]).rstrip("/") + "/api/v3")
-        setattr(target, f"{arr}_labels", split_labels(raw[f"{arr}_labels"]))
-    target.import_labels = split_labels(
-        os.getenv("IMPORT_LABELS") or f"{raw['sonarr_imported_label']},{raw['radarr_imported_label']}"
+        resolved[f"{arr}_url"] = ensure_http(raw[f"{arr}_url"]).rstrip("/") + "/api/v3"
+        resolved[f"{arr}_labels"] = split_labels(raw[f"{arr}_labels"])
+    resolved["import_labels"] = split_labels(
+        f"{raw['sonarr_imported_label']},{raw['radarr_imported_label']}"
     )
 
-    target.prowlarr_url = ensure_http(raw["prowlarr_url"]).rstrip("/")
-    target.jackett_url = ensure_http(raw["jackett_url"]).rstrip("/")
+    resolved["prowlarr_url"] = ensure_http(raw["prowlarr_url"]).rstrip("/")
+    resolved["jackett_url"] = ensure_http(raw["jackett_url"]).rstrip("/")
 
     del unknown_file_groups[:]
-    target.blocked_extensions = parse_extensions(raw["blocked_extensions"])
-    target.skipped_extensions = parse_extensions(raw["skipped_extensions"])
-    target.blocked_names = [n.lower() for n in split_labels(raw["blocked_names"])]
-    target.skipped_names = [n.lower() for n in split_labels(raw["skipped_names"])]
+    resolved["blocked_extensions"] = parse_extensions(raw["blocked_extensions"])
+    resolved["skipped_extensions"] = parse_extensions(raw["skipped_extensions"])
+    resolved["blocked_names"] = [n.lower() for n in split_labels(raw["blocked_names"])]
+    resolved["skipped_names"] = [n.lower() for n in split_labels(raw["skipped_names"])]
+    resolved["local_networks"] = parse_networks(raw["local_networks"])
+    return resolved
+
+
+def apply(target, raw):
+    """Set the attributes the rest of Evictarr reads, on target, from raw values.
+
+    The purge threads read them without a lock, so each attribute is only ever
+    set to its final value: never, even briefly, to the raw text it comes from.
+    """
+    for key, value in resolve(raw).items():
+        setattr(target, key, value)
 
 
 def load():
@@ -345,7 +400,12 @@ def load():
             try:
                 with open(settings_file) as f:
                     saved = json.load(f)
-            except (OSError, ValueError):
+            except (OSError, ValueError) as e:
+                # Keep the broken file for the user to fix, rather than overwrite it later
+                global load_error
+                broken = f"{settings_file}.broken-{int(__import__('time').time())}"
+                os.replace(settings_file, broken)
+                load_error = f"settings.json couldn't be read ({e}). It was moved to {broken} and defaults are being used"
                 saved = {}
 
         merged = {f["key"]: f["default"] for f in FIELDS}
@@ -394,6 +454,7 @@ def update(changes: dict):
         except ValueError as e:
             errors[key] = f"{field['label']} {e}"
 
+    errors.update(secrets_needing_reentry(changes))
     if errors:
         return errors
 
@@ -409,6 +470,9 @@ def preview(changes: dict):
     """A copy of the current settings with unsaved changes applied, for testing a connection."""
     from types import SimpleNamespace
 
+    problems = secrets_needing_reentry(changes)
+    if problems:
+        raise ValueError("; ".join(problems.values()))
     raw = dict(values)
     for key, value in changes.items():
         field = FIELDS_BY_KEY.get(key)

@@ -14,8 +14,11 @@
       <form class="panel" id="login-form" data-mode="setup" novalidate>
         <h1>Welcome! Create your login</h1>
         <p class="muted small">This protects Evictarr's settings, which include your download client and Sonarr/Radarr passwords and API keys.</p>
+        <label class="field"><span class="label">Setup code</span>
+          <input type="text" name="code" autocomplete="off" required autofocus placeholder="XXXX-XXXX-XXXX" spellcheck="false">
+          <div class="help">Shown in Evictarr's log when it starts. In Unraid, click the Evictarr icon and choose <strong>Logs</strong>. With Docker, run <code>docker logs evictarr</code>.</div></label>
         <label class="field"><span class="label">Username</span>
-          <input type="text" name="username" autocomplete="username" required autofocus maxlength="64"></label>
+          <input type="text" name="username" autocomplete="username" required maxlength="64"></label>
         <label class="field"><span class="label">Password</span>
           <input type="password" name="password" autocomplete="new-password" required></label>
         <ul class="rules" id="rules"></ul>

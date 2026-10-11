@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import zipfile
+from collections import deque
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -140,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {
                     "user": self.user(),
                     "has_account": auth.has_account(),
-                    "can_create_account": auth.can_create_account(self.ip, self.headers),
+                    "needs_setup": not auth.has_account(),
                     "password_rules": [{"id": i, "text": t} for i, t, _ in auth.PASSWORD_RULES],
                     "locked_for": auth.locked_for(self.ip),
                 })
@@ -202,8 +203,15 @@ class Handler(BaseHTTPRequestHandler):
             data = self.body()
 
             if path == "/api/setup":
-                if not auth.can_create_account(self.ip, self.headers):
-                    return self.send(403, {"error": "An account can only be created once, from your local network"})
+                if auth.has_account():
+                    return self.send(403, {"error": "An account already exists"})
+                if auth.locked_for(self.ip):
+                    return self.send(429, {"error": "Too many attempts. Try again in a few minutes"})
+                if not auth.can_create_account(data.get("code")):
+                    # Count it like a failed login, so the code can't be guessed
+                    auth.login(self.ip, "", "")
+                    logger.warning(f"Wrong setup code entered from {self.ip}")
+                    return self.send(403, {"error": "That setup code isn't right. It's in Evictarr's log"})
                 auth.set_password(data.get("username"), data.get("password"))
                 logger.info(f"Created web UI account {auth.username()}")
                 token = auth.login(self.ip, data.get("username"), data.get("password"))
@@ -310,7 +318,8 @@ def read_logs(kind):
     lines = []
     try:
         with open(config.log_file, errors="replace") as f:
-            raw = f.readlines()[-max(config.log_lines * 5, 2000):]
+            # Only keep the end of the file, rather than reading all of it into memory
+            raw = deque(f, maxlen=max(config.log_lines * 5, 2000))
     except FileNotFoundError:
         raw = []
     for line in raw:
@@ -385,4 +394,6 @@ def serve(d):
     server = ThreadingHTTPServer(("", config.web_port), Handler)
     server.daemon_threads = True
     logger.info(f"Starting web UI at {config.web_host}:{config.web_port}")
+    if not auth.has_account():
+        logger.log("STARTUP", f"First run: open the web UI and use setup code {auth.SETUP_CODE} to create your login")
     server.serve_forever()

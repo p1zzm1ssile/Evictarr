@@ -20,6 +20,7 @@ AUTH_FILE = os.path.join(config.config_dir, "auth.json")
 SESSION_SECONDS = 7 * 24 * 3600
 MAX_FAILURES = 5
 LOCKOUT_SECONDS = 5 * 60
+FAILURE_MEMORY_SECONDS = 15 * 60  # failures older than this are forgotten
 
 # Headers a reverse proxy adds. A request carrying any of them never gets the LAN
 # bypass, since behind a proxy every visitor appears to come from the proxy's
@@ -37,7 +38,15 @@ PASSWORD_RULES = [
 
 _lock = threading.Lock()
 _sessions = {}  # token -> (username, expires)
-_failures = {}  # ip -> (count, locked_until)
+_failures = {}  # ip -> (count, last_failure, locked_until)
+_account = None  # cached contents of auth.json
+_account_loaded = False
+
+# A one-time code, printed in the log, that's needed to create the first account.
+# Being on the local network isn't proof enough: a reverse proxy that adds no
+# forwarding headers, or Docker's own port forwarding, can make a visitor from
+# the internet look local.
+SETUP_CODE = "-".join(secrets.token_hex(2).upper() for _ in range(3))
 
 
 def password_problems(password: str) -> list:
@@ -49,11 +58,15 @@ def _hash(password: str, salt: bytes) -> bytes:
 
 
 def _load():
-    try:
-        with open(AUTH_FILE) as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
+    global _account, _account_loaded
+    if not _account_loaded:
+        try:
+            with open(AUTH_FILE) as f:
+                _account = json.load(f)
+        except (OSError, ValueError):
+            _account = None
+        _account_loaded = True
+    return _account
 
 
 def _save(data):
@@ -63,6 +76,8 @@ def _save(data):
         json.dump(data, f)
     os.chmod(tmp, 0o600)
     os.replace(tmp, AUTH_FILE)
+    global _account, _account_loaded
+    _account, _account_loaded = data, True
 
 
 def has_account() -> bool:
@@ -96,28 +111,42 @@ def check_password(user: str, password: str) -> bool:
     return hmac.compare_digest(candidate, bytes.fromhex(data["hash"])) and user_ok
 
 
+def _failure_entry(ip, now):
+    count, last, until = _failures.get(ip, (0, 0, 0))
+    if until <= now and now - last > FAILURE_MEMORY_SECONDS:
+        count = 0
+    return count, last, until
+
+
 def locked_for(ip: str) -> int:
     with _lock:
-        count, until = _failures.get(ip, (0, 0))
+        _, _, until = _failure_entry(ip, time.time())
         return max(0, int(until - time.time()))
 
 
 def login(ip: str, user: str, password: str):
-    """Return a session token, or None. Locks an address out after repeated failures."""
-    if locked_for(ip):
-        return None
-    if check_password(user, password):
-        with _lock:
-            _failures.pop(ip, None)
-            token = secrets.token_urlsafe(32)
-            _sessions[token] = (username(), time.time() + SESSION_SECONDS)
-            return token
+    """Return a session token, or None. Locks an address out after repeated failures.
+
+    The attempt is counted before the (slow) password check, so many attempts
+    sent at once can't all slip in before the lockout starts.
+    """
+    now = time.time()
     with _lock:
-        count, _ = _failures.get(ip, (0, 0))
+        count, last, until = _failure_entry(ip, now)
+        if until > now:
+            return None
         count += 1
-        until = time.time() + LOCKOUT_SECONDS if count >= MAX_FAILURES else 0
-        _failures[ip] = (0 if until else count, until)
-    return None
+        until = now + LOCKOUT_SECONDS if count >= MAX_FAILURES else 0
+        _failures[ip] = (0 if until else count, now, until)
+
+    if not check_password(user, password):
+        return None
+
+    with _lock:
+        _failures.pop(ip, None)
+        token = secrets.token_urlsafe(32)
+        _sessions[token] = (username(), time.time() + SESSION_SECONDS)
+        return token
 
 
 def session_user(token: str):
@@ -143,20 +172,23 @@ def is_proxied(headers) -> bool:
     return any(headers.get(h) for h in PROXY_HEADERS)
 
 
-def is_local_address(ip: str) -> bool:
+def _address(ip: str):
     try:
         address = ipaddress.ip_address(ip)
     except ValueError:
-        return False
+        return None
     if address.version == 6 and address.ipv4_mapped:
         address = address.ipv4_mapped
-    return address.is_private or address.is_loopback or address.is_link_local
+    return address
 
 
 def lan_bypass(ip: str, headers) -> bool:
-    return bool(config.auth_lan_bypass) and is_local_address(ip) and not is_proxied(headers)
+    """Only for the networks listed in the settings, and never through a proxy."""
+    if not config.auth_lan_bypass or is_proxied(headers):
+        return False
+    address = _address(ip)
+    return address is not None and any(address in net for net in config.local_networks)
 
 
-def can_create_account(ip: str, headers) -> bool:
-    """The first account can only be created from the local network, not through a proxy."""
-    return not has_account() and is_local_address(ip) and not is_proxied(headers)
+def can_create_account(code: str) -> bool:
+    return not has_account() and hmac.compare_digest((code or "").strip().upper(), SETUP_CODE)

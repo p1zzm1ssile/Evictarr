@@ -40,6 +40,8 @@ class Daemons:
 
     def reload(self):
         """Rebuild the connections from the current settings and run every check now."""
+        if config.load_error:
+            logger.error(config.load_error)
         self.sonarr = Sonarr()
         self.radarr = Radarr()
         self.torrent_client = MultiClient()
@@ -195,12 +197,28 @@ class Daemons:
         return not errors, "; ".join(results + errors)
 
     def purge_stalled(self, service: str, arr, labels: list, queue):
+        # Each check only handles its own downloads, so a Radarr download is never
+        # removed by the Sonarr check before Radarr can blocklist it. Downloads that
+        # belong to neither are handled by one check only, and only when
+        # IGNORE_OTHER_CATEGORIES is off.
+        other = "radarr" if service == "sonarr" else "sonarr"
+        other_labels = getattr(config, f"{other}_labels") if getattr(config, f"{other}_enabled") else []
+        own_ids = {(q.get("downloadId") or "").lower() for q in queue or []} - {""}
+        handles_unrelated = service == "sonarr" or not config.sonarr_enabled
+
+        def belongs_here(t):
+            if t["id"].lower() in own_ids or in_labels(t, labels):
+                return True
+            if config.ignore_other_categories or not handles_unrelated:
+                return False
+            return not in_labels(t, other_labels)
+
         stalled_torrents = [
             t
             for t in self.torrent_client.get_torrents()
             if t["state"] == "stalled"
             and t["age"] > int(config.torrent_age)
-            and (not config.ignore_other_categories or in_labels(t, labels))
+            and belongs_here(t)
         ]
 
         if not stalled_torrents:

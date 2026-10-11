@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 
@@ -12,9 +13,12 @@ _status = {"started": time.time(), "client": None, "checks": {}}
 
 
 def _write():
+    # Written to a temporary file and renamed, so the health check never reads half a file
     try:
-        with open(STATUS_FILE, "w") as f:
+        tmp = STATUS_FILE + ".tmp"
+        with open(tmp, "w") as f:
             json.dump(_status, f)
+        os.replace(tmp, STATUS_FILE)
     except OSError:
         pass
 
