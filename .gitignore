@@ -172,3 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Evictarr runtime files
+evictarr-status.json
+config/

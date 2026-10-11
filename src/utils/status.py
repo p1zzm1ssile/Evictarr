@@ -36,9 +36,12 @@ def register(check: str, interval: int):
         _write()
 
 
-def record(check: str, ok: bool, summary: str):
+def record(check: str, ok: bool, summary: str, interval: int = None):
     with _lock:
-        _status["checks"][check].update(last_run=time.time(), ok=ok, summary=summary)
+        entry = _status["checks"][check]
+        entry.update(last_run=time.time(), ok=ok, summary=summary)
+        if interval is not None:
+            entry["interval"] = interval
         _write()
 
 

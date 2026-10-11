@@ -4,7 +4,9 @@ from utils.logger import *
 
 
 class Base:
-    def __init__(self):
+    def __init__(self, cfg=None):
+        # cfg is the settings to use; a test from the web UI passes unsaved ones
+        self.cfg = cfg or config
         self.session = requests.Session()
 
     def get_records(self, url: str, endpoint: str, api_key: str, params: dict):
@@ -18,7 +20,7 @@ class Base:
                 url=f"{url}/{endpoint}",
                 headers={"X-Api-Key": api_key},
                 params=params,
-                timeout=config.request_timeout,
+                timeout=self.cfg.request_timeout,
             )
             response.raise_for_status()
             body = response.json()
@@ -53,10 +55,10 @@ class Base:
             params={
                 "removeFromClient": f"{remove_from_client}".lower(),
                 "blocklist": f"{blocklist}".lower(),
-                "skipRedownload": f"{not config.retry_search}".lower(),
+                "skipRedownload": f"{not self.cfg.retry_search}".lower(),
                 "changeCategory": "false",
             },
-            timeout=config.request_timeout,
+            timeout=self.cfg.request_timeout,
         )
 
         if response.status_code == 404 or (

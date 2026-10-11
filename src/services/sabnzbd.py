@@ -15,16 +15,17 @@ class SABnzbdClient:
 
     ACTIVE = {"Downloading", "Grabbing", "Fetching"}
 
-    def __init__(self):
+    def __init__(self, cfg=None):
+        self.cfg = cfg or config
         self.session = requests.Session()
         self.progress = {}  # nzo_id -> (first_seen, mbleft, last_progress)
         self.lock = threading.Lock()
 
     def call(self, mode: str, **params) -> dict:
         response = self.session.get(
-            f"{config.sabnzbd_url}/api",
-            params={"mode": mode, "output": "json", "apikey": config.sabnzbd_api_key, **params},
-            timeout=config.request_timeout,
+            f"{self.cfg.sabnzbd_url}/api",
+            params={"mode": mode, "output": "json", "apikey": self.cfg.sabnzbd_api_key, **params},
+            timeout=self.cfg.request_timeout,
         )
         # Don't use raise_for_status, its message includes the URL and so the API key
         if response.status_code == 403:
@@ -71,7 +72,7 @@ class SABnzbdClient:
                         state = "paused"
                     case "Queued":
                         state = "queued"
-                    case s if s in self.ACTIVE and stuck_minutes > int(config.torrent_age):
+                    case s if s in self.ACTIVE and stuck_minutes > int(self.cfg.torrent_age):
                         state = "stalled"
                     case s if s in self.ACTIVE or s in {"Checking", "Propagating"}:
                         state = "processing"
@@ -105,7 +106,7 @@ class SABnzbdClient:
 
     def remove_torrents(self, ids: list, delete_files: bool = None):
         if delete_files is None:
-            delete_files = config.delete_files
+            delete_files = self.cfg.delete_files
 
         self.call("queue", name="delete", value=",".join(ids), del_files=int(delete_files))
 

@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 0.4.0
+
+`October 11 2026`
+
+### Features
+
+* **Web UI for everything.** Settings are made in the browser and saved to `/config/settings.json`, and changes apply as soon as you save, with no restart. Existing environment variables are copied in on first start.
+  * **Settings** tabs for General, Blocking, Sonarr, Radarr, Download clients and Indexers, each with its own **Save** button and **Test connection** buttons.
+  * Ticked groups (malware, archives, disc images, ROMs and so on) for file blocking and skipping.
+* **Login.** The first account is created in the browser, from your local network only. Passwords need at least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character, and are stored as scrypt hashes. 5 wrong attempts lock an address out for 5 minutes. An optional **skip login on my local network** never applies to requests through a reverse proxy. The login page warns against exposing Evictarr to the internet.
+* **Downloads** start page: every download in every client, which of Sonarr/Radarr tracks it and from which indexer, and its files, marked with whether each will be blocked or skipped.
+* **Logs** page with **Issues** (errors and warnings) and **Actions** filters, search, and **Download all logs** as a zip.
+* **Several download clients at once.** Tick any combination of qBittorrent, RDTClient, Deluge, Transmission and SABnzbd. If one is down, the others keep being checked. RDTClient now has its own settings, so it can run alongside qBittorrent.
+* **Prowlarr and Jackett** (optional): indexer health on the Downloads page, and rejected releases name the indexer they came from in the logs.
+* An Unraid template in `unraid/evictarr.xml`, and the image now has a `/config` volume.
+
+### Changes
+
+* Evictarr no longer exits when a download client can't be reached at startup. It keeps running so you can fix the settings in the web UI.
+* Log files are kept in `/config/logs`, with the last 5 rotated files.
+
+
 ## 0.3.0 (Evictarr)
 
 `October 10 2026`

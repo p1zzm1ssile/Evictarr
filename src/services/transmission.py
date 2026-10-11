@@ -10,26 +10,28 @@ class TransmissionClient:
 
     SESSION_HEADER = "X-Transmission-Session-Id"
 
-    def __init__(self):
+    def __init__(self, cfg=None):
+        self.cfg = cfg or config
         self.session = requests.Session()
-        if config.transmission_user:
-            self.session.auth = (config.transmission_user, config.transmission_pass or "")
 
     def call(self, method: str, arguments: dict = None) -> dict:
         payload = {"method": method, "arguments": arguments or {}}
+        # Read each call, so a changed username or password applies straight away
+        user = self.cfg.transmission_user
+        self.session.auth = (user, self.cfg.transmission_pass or "") if user else None
         response = self.session.post(
-            config.transmission_url, json=payload, timeout=config.request_timeout
+            self.cfg.transmission_url, json=payload, timeout=self.cfg.request_timeout
         )
 
         # Transmission answers 409 with a fresh session id that has to be sent back
         if response.status_code == 409:
             self.session.headers[self.SESSION_HEADER] = response.headers[self.SESSION_HEADER]
             response = self.session.post(
-                config.transmission_url, json=payload, timeout=config.request_timeout
+                self.cfg.transmission_url, json=payload, timeout=self.cfg.request_timeout
             )
 
         if response.status_code == 401:
-            raise Exception("authentication failed, check TRANSMISSION_USER and TRANSMISSION_PASSWORD")
+            raise Exception("authentication failed, check the username and password")
 
         response.raise_for_status()
         body = response.json()
@@ -118,7 +120,7 @@ class TransmissionClient:
 
     def remove_torrents(self, hashes: list, delete_files: bool = None):
         if delete_files is None:
-            delete_files = config.delete_files
+            delete_files = self.cfg.delete_files
 
         self.call(
             "torrent-remove",

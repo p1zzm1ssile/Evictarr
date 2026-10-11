@@ -9,16 +9,17 @@ class DelugeClient:
 
     NOT_AUTHENTICATED = 1
 
-    def __init__(self):
+    def __init__(self, cfg=None):
+        self.cfg = cfg or config
         self.session = requests.Session()
         self.request_id = 0
 
     def call(self, method: str, params: list, retry: bool = True):
         self.request_id += 1
         response = self.session.post(
-            f"{config.deluge_url}/json",
+            f"{self.cfg.deluge_url}/json",
             json={"method": method, "params": params, "id": self.request_id},
-            timeout=config.request_timeout,
+            timeout=self.cfg.request_timeout,
         )
         response.raise_for_status()
         body = response.json()
@@ -36,8 +37,8 @@ class DelugeClient:
         logger.info("Logging in to Deluge")
         self.session.cookies.clear()
 
-        if not self.call("auth.login", [config.deluge_pass], retry=False):
-            logger.error("Deluge authentication failed, check DELUGE_PASSWORD")
+        if not self.call("auth.login", [self.cfg.deluge_pass], retry=False):
+            logger.error("Deluge authentication failed, check the Web UI password")
             return
 
         # The Web UI has to be connected to a Deluge daemon before core.* calls work
@@ -129,7 +130,7 @@ class DelugeClient:
 
     def remove_torrents(self, hashes: list, delete_files: bool = None):
         if delete_files is None:
-            delete_files = config.delete_files
+            delete_files = self.cfg.delete_files
 
         try:
             self.call("core.remove_torrents", [hashes, delete_files])

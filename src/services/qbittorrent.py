@@ -8,35 +8,52 @@ from utils.logger import *
 class QBittorrentClient:
     """qBittorrent Web API client. Also works with RDTClient, which copies this API."""
 
-    def __init__(self):
+    def __init__(self, cfg=None, prefix="qbit"):
+        # prefix picks the settings: "qbit" for qBittorrent, "rdt" for RDTClient
+        self.cfg = cfg or config
+        self.prefix = prefix
+        self.name = "RDTClient" if prefix == "rdt" else "qBittorrent"
         self.session = requests.Session()
         self.last_sid_refresh = 0
         self.warned_no_cookie = False
 
+    @property
+    def url(self):
+        return getattr(self.cfg, f"{self.prefix}_url")
+
+    @property
+    def user(self):
+        return getattr(self.cfg, f"{self.prefix}_user") or ""
+
+    @property
+    def password(self):
+        return getattr(self.cfg, f"{self.prefix}_pass") or ""
+
     def authenticate(self, force: bool = False):
         now = time.time()
-        if not force and now - self.last_sid_refresh < config.qbit_token_refresh_interval:
+        if not force and now - self.last_sid_refresh < self.cfg.qbit_token_refresh_interval:
             return
 
-        logger.info("Refreshing qBittorrent auth token")
-        headers = {"Referer": config.qbit_url}
-        data = {"username": config.qbit_user, "password": config.qbit_pass}
+        logger.info(f"Refreshing {self.name} auth token")
+        headers = {"Referer": self.url}
+        data = {"username": self.user, "password": self.password}
 
         try:
             self.session.cookies.clear()
             response = self.session.post(
-                f"{config.qbit_url}/auth/login",
+                f"{self.url}/auth/login",
                 headers=headers,
                 data=data,
-                timeout=config.request_timeout,
+                timeout=self.cfg.request_timeout,
             )
             response.raise_for_status()
-        except Exception as e:
-            logger.error(f"qBittorrent authentication failed | {e}")
+        except Exception:
+            # Not logged here: the request that follows fails too, and the check
+            # reports a short reason ("can't connect to ...")
             return
 
         if response.text.strip() == "Fails.":
-            logger.error("qBittorrent authentication failed, check QBIT_USER and QBIT_PASSWORD")
+            logger.error(f"{self.name} authentication failed, check the username and password")
             return
 
         # The session keeps whatever cookie the client sets: SID on older qBittorrent,
@@ -49,15 +66,15 @@ class QBittorrentClient:
         self.last_sid_refresh = now
 
     def request(self, method: str, endpoint: str, **kwargs):
-        kwargs.setdefault("timeout", config.request_timeout)
+        kwargs.setdefault("timeout", self.cfg.request_timeout)
         self.authenticate()
-        response = self.session.request(method, f"{config.qbit_url}/{endpoint}", **kwargs)
+        response = self.session.request(method, f"{self.url}/{endpoint}", **kwargs)
 
         # The session expired before the refresh interval was up, log in again
         if response.status_code in (401, 403):
             self.authenticate(force=True)
             response = self.session.request(
-                method, f"{config.qbit_url}/{endpoint}", **kwargs
+                method, f"{self.url}/{endpoint}", **kwargs
             )
 
         response.raise_for_status()
@@ -120,7 +137,7 @@ class QBittorrentClient:
 
     def remove_torrents(self, hashes: list, delete_files: bool = None):
         if delete_files is None:
-            delete_files = config.delete_files
+            delete_files = self.cfg.delete_files
 
         self.request(
             "POST",

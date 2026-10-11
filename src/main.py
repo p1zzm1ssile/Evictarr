@@ -1,56 +1,40 @@
 from utils.daemons import Daemons
 from utils.logger import logger
 import utils.config as config
+import utils.web as web
 import signal
 import sys
 import threading
 import time
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 def main():
     signal.signal(signal.SIGINT, handle_sigint)
+    signal.signal(signal.SIGTERM, handle_sigint)
 
     d = Daemons()
 
-    if config.log_output in ["all", "web"]:
-        logger.log("STARTUP", "Starting Evictarr webUI daemon")
-        server_thread = threading.Thread(target=d.webui, daemon=True)
-        server_thread.start()
+    # Always on: settings are made in the web UI
+    logger.log("STARTUP", "Starting Evictarr web UI")
+    threading.Thread(target=web.serve, args=(d,), daemon=True).start()
 
-    if config.purge_imported:
-        logger.log("STARTUP", "Starting import Evictarr daemon")
-        threading.Thread(
-            target=lambda: d.imported_evictarr(),
-            daemon=True,
-        ).start()
+    # Every check always runs, and skips itself while turned off, so turning a
+    # feature on in the web UI takes effect without a restart
+    checks = [
+        ("imported", d.imported_evictarr, {}),
+        ("blocked file", d.extension_evictarr, {}),
+        ("sonarr", d.stalled_evictarr, {"service": "sonarr"}),
+        ("radarr", d.stalled_evictarr, {"service": "radarr"}),
+    ]
+    for name, target, kwargs in checks:
+        logger.log("STARTUP", f"Starting {name} check")
+        threading.Thread(target=target, kwargs=kwargs, daemon=True).start()
 
-    if config.purge_extensions:
-        logger.log("STARTUP", "Starting blocked file type Evictarr daemon")
-        threading.Thread(target=d.extension_evictarr, daemon=True).start()
+    logger.log("STARTUP", f"Evictarr is running. Open the web UI on port {config.web_port}")
 
-    if config.purge_stalled or config.purge_failed_imports:
-        stalled_daemons = [
-            {"service": "sonarr", "url": config.sonarr_url},
-            {"service": "radarr", "url": config.radarr_url},
-        ]
-        for sd in stalled_daemons:
-            logger.log("STARTUP", f"Starting {sd['service']} Evictarr daemon")
-            threading.Thread(
-                target=d.stalled_evictarr,
-                kwargs={"service": sd["service"], "url": sd["url"]},
-                daemon=True,
-            ).start()
-
-            time.sleep(5)
-
-    logger.log("STARTUP", "All daemons started")
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Stopping Evictarr", True)
+    while True:
+        time.sleep(1)
 
 
 def handle_sigint(signum, frame):

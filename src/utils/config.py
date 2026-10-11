@@ -1,30 +1,69 @@
+"""Evictarr settings.
+
+Every setting is described once in FIELDS: its tab in the web UI, its label, its
+type, the environment variable it used to come from, and its default. Settings
+live in settings.json in CONFIG_DIR and are edited in the web UI. On first start,
+settings.json is created from the environment variables, so existing Purgarr and
+Evictarr setups carry over.
+
+The rest of Evictarr reads plain module attributes (config.sonarr_url and so on).
+apply() fills those in from the saved values, so a change made in the web UI takes
+effect without a restart.
+"""
+
 from dotenv import load_dotenv
+import json
 import os
+import tempfile
+import threading
 
 load_dotenv()
 
 
 def ensure_http(url):
+    url = (url or "").strip()
     return url if url.startswith(("http://", "https://")) else "http://" + url
 
 
 def split_labels(value):
-    return [l.strip() for l in value.split(",") if l.strip()]
+    if isinstance(value, list):
+        value = ",".join(value)
+    return [l.strip() for l in (value or "").split(",") if l.strip()]
 
 
-# Evictarr Behaviour
-log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-purge_stalled = os.getenv("PURGE_STALLED", "True").lower() == "true"
-purge_stalled_interval = int(os.getenv("PURGE_STALLED_INTERVAL", 300))
-block_stalled_torrents = os.getenv("BLOCK_STALLED_TORRENTS", "True").lower() == "true"
-purge_imported = os.getenv("PURGE_IMPORTED", "True").lower() == "true"
-purge_imported_interval = int(os.getenv("PURGE_IMPORTED_INTERVAL", 600))
-purge_failed_imports = os.getenv("PURGE_FAILED_IMPORTS", "False").lower() == "true"
-# PURGE_FILES is an alias, since names can be filtered as well as extensions
-purge_extensions = (
-    os.getenv("PURGE_FILES") or os.getenv("PURGE_EXTENSIONS", "False")
-).lower() == "true"
-purge_extensions_interval = int(os.getenv("PURGE_EXTENSIONS_INTERVAL", 60))
+def env_bool(*names, default=False):
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value != "":
+            return value.strip().lower() == "true"
+    return default
+
+
+def env_str(*names, default=""):
+    for name in names:
+        value = os.getenv(name)
+        if value is not None:
+            return value
+    return default
+
+
+def env_int(*names, default=0):
+    value = env_str(*names, default=None)
+    try:
+        return int(value) if value not in (None, "") else default
+    except ValueError:
+        return default
+
+
+# Only set by environment, since they're needed before the web UI can run
+config_dir = os.getenv("CONFIG_DIR") or ("/config" if os.path.isdir("/config") else "config")
+settings_file = os.path.join(config_dir, "settings.json")
+log_dir = os.path.join(config_dir, "logs")
+log_file = os.path.join(log_dir, "evictarr.log")
+log_output = os.getenv("LOG_OUTPUT", "all").lower()
+web_host = os.getenv("WEB_HOST", "http://localhost").lower()
+web_port = int(os.getenv("WEB_PORT", 9891))
+log_refresh_interval = int(os.getenv("LOG_REFRESH_INTERVAL", 5))
 
 # Ready-made groups that can be used in the extension settings, e.g. "@archives,@roms"
 FILE_GROUPS = {
@@ -52,67 +91,356 @@ def parse_extensions(value):
     return sorted(extensions)
 
 
-# Files that get the whole download rejected: blocklisted, removed and replaced.
-# Archives aren't blocked by default, since many genuine releases use them.
-blocked_extensions = parse_extensions(os.getenv("BLOCKED_EXTENSIONS", "@malware"))
-blocked_names = [n.lower() for n in split_labels(os.getenv("BLOCKED_NAMES", ""))]
+CLIENTS = {
+    "qbittorrent": "qBittorrent",
+    "rdtclient": "RDTClient",
+    "deluge": "Deluge",
+    "transmission": "Transmission",
+    "sabnzbd": "SABnzbd",
+}
 
-# Files that are just skipped (not downloaded), keeping the rest of the download
-skipped_extensions = parse_extensions(os.getenv("SKIPPED_EXTENSIONS", ""))
-skipped_names = [n.lower() for n in split_labels(os.getenv("SKIPPED_NAMES", ""))]
-delete_files = os.getenv("DELETE_FILES", "True").lower() == "true"
-ignore_other_categories = (
-    os.getenv("IGNORE_OTHER_CATEGORIES", "False").lower() == "true"
-)
-retry_search = os.getenv("RETRY_SEARCH", "True").lower() == "true"
-log_output = os.getenv("LOG_OUTPUT", "all").lower()
-web_host = os.getenv("WEB_HOST", "http://localhost").lower()
-web_port = int(os.getenv("WEB_PORT", 9891))
-request_timeout = int(os.getenv("REQUEST_TIMEOUT", 30))
+TABS = {
+    "general": "General",
+    "blocking": "Blocking",
+    "sonarr": "Sonarr",
+    "radarr": "Radarr",
+    "clients": "Download clients",
+    "indexers": "Indexers",
+}
 
-# Torrents
-# DOWNLOAD_CLIENT is an alias, since SABnzbd isn't a torrent client
-torrent_client = os.getenv("DOWNLOAD_CLIENT") or os.getenv("TORRENT_CLIENT", "qbittorrent")
-torrent_age = os.getenv("TORRENT_AGE", 5)
 
-# qBittorrent
-qbit_url = ensure_http(os.getenv("QBIT_URL", "localhost:8080")) + "/api/v2"
-qbit_user = os.getenv("QBIT_USER", "admin")
-qbit_pass = os.getenv("QBIT_PASSWORD")
-qbit_token_refresh_interval = int(os.getenv("QBIT_TOKEN_REFRESH_INTERVAL", 600))
+def _legacy_client():
+    """The client an environment-variable setup used, or None on a brand-new install."""
+    chosen = env_str("DOWNLOAD_CLIENT", "TORRENT_CLIENT", default="").strip().lower()
+    if chosen:
+        return chosen
+    # Purgarr defaulted to qBittorrent, so an older setup may only have set QBIT_*
+    if any(os.getenv(name) for name in ("QBIT_URL", "QBIT_PASSWORD", "QBIT_USER")):
+        return "qbittorrent"
+    return None
 
-# Deluge
-deluge_url = ensure_http(os.getenv("DELUGE_URL", "localhost:8112"))
-deluge_pass = os.getenv("DELUGE_PASSWORD", "deluge")
 
-# Transmission
-transmission_url = ensure_http(os.getenv("TRANSMISSION_URL", "localhost:9091")).rstrip("/")
-if not transmission_url.endswith("/rpc"):
-    transmission_url += "/transmission/rpc"
-transmission_user = os.getenv("TRANSMISSION_USER")
-transmission_pass = os.getenv("TRANSMISSION_PASSWORD")
+def F(key, tab, label, type, default, help="", section="", group=None, **extra):
+    """Describe one setting. type is bool, int, text, secret, select, labels or files."""
+    return dict(key=key, tab=tab, label=label, type=type, default=default, help=help,
+                section=section, group=group, **extra)
 
-# SABnzbd
-sabnzbd_url = ensure_http(os.getenv("SABNZBD_URL", "localhost:8080")).rstrip("/")
-sabnzbd_api_key = os.getenv("SABNZBD_API_KEY")
 
-# Sonarr
-sonarr_labels = split_labels(os.getenv("SONARR_LABELS", "tv-sonarr"))
-sonarr_url = ensure_http(os.getenv("SONARR_URL", "localhost:8989")) + "/api/v3"
-sonarr_api_key = os.getenv("SONARR_API_KEY")
-sonarr_imported_label = os.getenv("SONARR_IMPORTED_LABEL", "sonarr-imported")
+FIELDS = [
+    # General
+    F("purge_imported", "general", "Remove imported downloads", "bool",
+      env_bool("PURGE_IMPORTED", default=True), section="Imported downloads",
+      help="Remove downloads once Sonarr/Radarr has imported them (their post-import category)."),
+    F("purge_imported_interval", "general", "Check every (seconds)", "int",
+      env_int("PURGE_IMPORTED_INTERVAL", default=600), section="Imported downloads", min=10),
+    F("purge_stalled", "general", "Remove stalled downloads", "bool",
+      env_bool("PURGE_STALLED", default=True), section="Stalled downloads"),
+    F("block_stalled_torrents", "general", "Blocklist stalled releases", "bool",
+      env_bool("BLOCK_STALLED_TORRENTS", default=True), section="Stalled downloads",
+      help="Add stalled releases to the Sonarr/Radarr blocklist so a different release is grabbed."),
+    F("purge_stalled_interval", "general", "Check every (seconds)", "int",
+      env_int("PURGE_STALLED_INTERVAL", default=300), section="Stalled downloads", min=10),
+    F("torrent_age", "general", "Grace period (minutes)", "int",
+      env_int("TORRENT_AGE", default=5), section="Stalled downloads", min=0,
+      help="How old a download must be before it can count as stalled."),
+    F("purge_failed_imports", "general", "Remove failed imports", "bool",
+      env_bool("PURGE_FAILED_IMPORTS", default=False), section="Failed imports",
+      help="Remove and blocklist downloads Sonarr/Radarr couldn't import. Leave off if you import by hand."),
+    F("ignore_other_categories", "general", "Only touch Sonarr/Radarr categories", "bool",
+      env_bool("IGNORE_OTHER_CATEGORIES", default=False), section="Behaviour",
+      help="Leave downloads in any other category alone."),
+    F("delete_files", "general", "Delete files when removing", "bool",
+      env_bool("DELETE_FILES", default=True), section="Behaviour"),
+    F("retry_search", "general", "Search for a replacement", "bool",
+      env_bool("RETRY_SEARCH", default=True), section="Behaviour",
+      help="Ask Sonarr/Radarr to search again after blocklisting a release."),
+    F("request_timeout", "general", "Request timeout (seconds)", "int",
+      env_int("REQUEST_TIMEOUT", default=30), section="Behaviour", min=1),
+    F("log_level", "general", "Log level", "select", env_str("LOG_LEVEL", default="INFO").upper(),
+      section="Logs", options=["INFO", "WARNING", "ERROR"]),
+    F("log_lines", "general", "Log lines shown", "int", env_int("LOG_LINES", default=500),
+      section="Logs", min=50, max=10000),
+    F("auth_lan_bypass", "general", "Skip login on my local network", "bool",
+      env_bool("AUTH_LAN_BYPASS", default=False), section="Login",
+      help="Don't ask for a password from private (LAN) addresses. Never applies to requests that come through a reverse proxy."),
 
-# Radarr
-radarr_labels = split_labels(os.getenv("RADARR_LABELS", "radarr"))
-radarr_url = ensure_http(os.getenv("RADARR_URL", "localhost:7878")) + "/api/v3"
-radarr_api_key = os.getenv("RADARR_API_KEY")
-radarr_imported_label = os.getenv("RADARR_IMPORTED_LABEL", "radarr-imported")
+    # Blocking
+    F("purge_extensions", "blocking", "Turn on file blocking", "bool",
+      env_bool("PURGE_FILES", "PURGE_EXTENSIONS", default=False), section="File blocking",
+      help="Check the files inside every download Sonarr/Radarr are tracking."),
+    F("purge_extensions_interval", "blocking", "Check every (seconds)", "int",
+      env_int("PURGE_EXTENSIONS_INTERVAL", default=60), section="File blocking", min=10),
+    F("blocked_extensions", "blocking", "Reject downloads containing", "files",
+      env_str("BLOCKED_EXTENSIONS", default="@malware"), section="Block (reject the whole download)",
+      help="The release is blocklisted, removed with its files, and a replacement is searched for."),
+    F("blocked_names", "blocking", "Reject downloads with file names like", "labels",
+      env_str("BLOCKED_NAMES", default=""), section="Block (reject the whole download)",
+      help="Wildcards, separated by commas, e.g. *password*. Use / to match folders: */extras/*"),
+    F("skipped_extensions", "blocking", "Don't download these file types", "files",
+      env_str("SKIPPED_EXTENSIONS", default=""), section="Skip (keep the rest of the download)"),
+    F("skipped_names", "blocking", "Don't download files named like", "labels",
+      env_str("SKIPPED_NAMES", default=""), section="Skip (keep the rest of the download)",
+      help="e.g. *sample*. If nothing would be left, the download is rejected instead."),
 
-# webUI
-log_lines = int(os.getenv("LOG_LINES", 100))
-log_refresh_interval = int(os.getenv("LOG_REFRESH_INTERVAL", 5))
+    # Sonarr and Radarr
+    *[
+        field
+        for arr, port, labels in (("sonarr", 8989, "tv-sonarr"), ("radarr", 7878, "radarr"))
+        for field in (
+            F(f"{arr}_enabled", arr, f"Use {arr.capitalize()}", "bool",
+              env_bool(f"{arr.upper()}_ENABLED", default=bool(os.getenv(f"{arr.upper()}_API_KEY"))),
+              section="Connection"),
+            F(f"{arr}_url", arr, "Address", "text",
+              env_str(f"{arr.upper()}_URL", default=f"localhost:{port}"), section="Connection",
+              help=f"IP address or hostname with port, e.g. 192.168.1.10:{port}"),
+            F(f"{arr}_api_key", arr, "API key", "secret", env_str(f"{arr.upper()}_API_KEY"),
+              section="Connection", help="Settings > General > Security in " + arr.capitalize()),
+            F(f"{arr}_labels", arr, "Categories", "labels",
+              env_str(f"{arr.upper()}_LABELS", default=labels), section="Categories",
+              help="The category (or label) set in its download client settings. Separate several with commas."),
+            F(f"{arr}_imported_label", arr, "Post-import category", "text",
+              env_str(f"{arr.upper()}_IMPORTED_LABEL", default=f"{arr}-imported"), section="Categories",
+              help="Downloads moved to this category after import are removed."),
+        )
+    ],
 
-# Other
-import_labels = split_labels(
-    os.getenv("IMPORT_LABELS", f"{sonarr_imported_label}, {radarr_imported_label}")
-)
+    # Download clients
+    F("client_qbittorrent", "clients", "qBittorrent", "bool", _legacy_client() == "qbittorrent",
+      section="qBittorrent", group="qbittorrent", toggle=True),
+    F("qbit_url", "clients", "Address", "text", env_str("QBIT_URL", default="localhost:8080"),
+      section="qBittorrent", group="qbittorrent"),
+    F("qbit_user", "clients", "Username", "text", env_str("QBIT_USER", default="admin"),
+      section="qBittorrent", group="qbittorrent", help="Leave empty if the Web UI has no login."),
+    F("qbit_pass", "clients", "Password", "secret", env_str("QBIT_PASSWORD"),
+      section="qBittorrent", group="qbittorrent"),
+    F("client_rdtclient", "clients", "RDTClient", "bool", _legacy_client() == "rdtclient",
+      section="RDTClient", group="rdtclient", toggle=True),
+    F("rdt_url", "clients", "Address", "text",
+      env_str("RDT_URL", "QBIT_URL", default="localhost:6500") if _legacy_client() == "rdtclient"
+      else env_str("RDT_URL", default="localhost:6500"), section="RDTClient", group="rdtclient"),
+    F("rdt_user", "clients", "Username", "text",
+      env_str("RDT_USER", "QBIT_USER") if _legacy_client() == "rdtclient" else env_str("RDT_USER"),
+      section="RDTClient", group="rdtclient", help="Leave empty if authentication is turned off."),
+    F("rdt_pass", "clients", "Password", "secret",
+      env_str("RDT_PASSWORD", "QBIT_PASSWORD") if _legacy_client() == "rdtclient" else env_str("RDT_PASSWORD"),
+      section="RDTClient", group="rdtclient"),
+    F("client_deluge", "clients", "Deluge", "bool", _legacy_client() == "deluge",
+      section="Deluge", group="deluge", toggle=True),
+    F("deluge_url", "clients", "Web UI address", "text", env_str("DELUGE_URL", default="localhost:8112"),
+      section="Deluge", group="deluge"),
+    F("deluge_pass", "clients", "Web UI password", "secret", env_str("DELUGE_PASSWORD", default="deluge"),
+      section="Deluge", group="deluge"),
+    F("client_transmission", "clients", "Transmission", "bool", _legacy_client() == "transmission",
+      section="Transmission", group="transmission", toggle=True),
+    F("transmission_url", "clients", "Address", "text", env_str("TRANSMISSION_URL", default="localhost:9091"),
+      section="Transmission", group="transmission"),
+    F("transmission_user", "clients", "Username", "text", env_str("TRANSMISSION_USER"),
+      section="Transmission", group="transmission", help="Leave empty if authentication is turned off."),
+    F("transmission_pass", "clients", "Password", "secret", env_str("TRANSMISSION_PASSWORD"),
+      section="Transmission", group="transmission"),
+    F("client_sabnzbd", "clients", "SABnzbd", "bool", _legacy_client() == "sabnzbd",
+      section="SABnzbd", group="sabnzbd", toggle=True),
+    F("sabnzbd_url", "clients", "Address", "text", env_str("SABNZBD_URL", default="localhost:8080"),
+      section="SABnzbd", group="sabnzbd"),
+    F("sabnzbd_api_key", "clients", "API key", "secret", env_str("SABNZBD_API_KEY"),
+      section="SABnzbd", group="sabnzbd", help="Config > General in SABnzbd"),
+    F("qbit_token_refresh_interval", "clients", "Log in again every (seconds)", "int",
+      env_int("QBIT_TOKEN_REFRESH_INTERVAL", default=600), section="Advanced", min=60,
+      help="For qBittorrent and RDTClient."),
+
+    # Indexers
+    F("prowlarr_enabled", "indexers", "Prowlarr", "bool", env_bool("PROWLARR_ENABLED", default=False),
+      section="Prowlarr", group="prowlarr", toggle=True),
+    F("prowlarr_url", "indexers", "Address", "text", env_str("PROWLARR_URL", default="localhost:9696"),
+      section="Prowlarr", group="prowlarr"),
+    F("prowlarr_api_key", "indexers", "API key", "secret", env_str("PROWLARR_API_KEY"),
+      section="Prowlarr", group="prowlarr", help="Settings > General in Prowlarr"),
+    F("jackett_enabled", "indexers", "Jackett", "bool", env_bool("JACKETT_ENABLED", default=False),
+      section="Jackett", group="jackett", toggle=True),
+    F("jackett_url", "indexers", "Address", "text", env_str("JACKETT_URL", default="localhost:9117"),
+      section="Jackett", group="jackett"),
+    F("jackett_api_key", "indexers", "API key", "secret", env_str("JACKETT_API_KEY"),
+      section="Jackett", group="jackett", help="Shown at the top of the Jackett dashboard"),
+]
+
+FIELDS_BY_KEY = {f["key"]: f for f in FIELDS}
+SECRET_KEYS = {f["key"] for f in FIELDS if f["type"] == "secret"}
+
+_lock = threading.RLock()
+values = {f["key"]: f["default"] for f in FIELDS}
+
+
+def coerce(field, value):
+    """Turn a submitted value into the right type, or raise ValueError with a reason."""
+    t = field["type"]
+    if t == "bool":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        raise ValueError("must be on or off")
+    if t == "int":
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            raise ValueError("must be a whole number")
+        if "min" in field and number < field["min"]:
+            raise ValueError(f"must be at least {field['min']}")
+        if "max" in field and number > field["max"]:
+            raise ValueError(f"must be at most {field['max']}")
+        return number
+    if t == "select":
+        if value not in field["options"]:
+            raise ValueError(f"must be one of {', '.join(field['options'])}")
+        return value
+    value = "" if value is None else str(value).strip()
+    if len(value) > 2000:
+        raise ValueError("is too long")
+    if t == "text" and field["key"].endswith("_url") and any(c in value for c in " <>\"'"):
+        raise ValueError("isn't a valid address")
+    return value
+
+
+def apply(target, raw):
+    """Set the attributes the rest of Evictarr reads, on target, from raw values."""
+    for key, value in raw.items():
+        setattr(target, key, value)
+
+    target.log_level = raw["log_level"]
+    target.enabled_clients = [c for c in CLIENTS if raw.get(f"client_{c}")]
+    target.torrent_client = ", ".join(target.enabled_clients) or "none"
+
+    target.qbit_url = ensure_http(raw["qbit_url"]).rstrip("/") + "/api/v2"
+    target.rdt_url = ensure_http(raw["rdt_url"]).rstrip("/") + "/api/v2"
+    target.deluge_url = ensure_http(raw["deluge_url"]).rstrip("/")
+    transmission_url = ensure_http(raw["transmission_url"]).rstrip("/")
+    if not transmission_url.endswith("/rpc"):
+        transmission_url += "/transmission/rpc"
+    target.transmission_url = transmission_url
+    target.sabnzbd_url = ensure_http(raw["sabnzbd_url"]).rstrip("/")
+
+    for arr in ("sonarr", "radarr"):
+        setattr(target, f"{arr}_url", ensure_http(raw[f"{arr}_url"]).rstrip("/") + "/api/v3")
+        setattr(target, f"{arr}_labels", split_labels(raw[f"{arr}_labels"]))
+    target.import_labels = split_labels(
+        os.getenv("IMPORT_LABELS") or f"{raw['sonarr_imported_label']},{raw['radarr_imported_label']}"
+    )
+
+    target.prowlarr_url = ensure_http(raw["prowlarr_url"]).rstrip("/")
+    target.jackett_url = ensure_http(raw["jackett_url"]).rstrip("/")
+
+    del unknown_file_groups[:]
+    target.blocked_extensions = parse_extensions(raw["blocked_extensions"])
+    target.skipped_extensions = parse_extensions(raw["skipped_extensions"])
+    target.blocked_names = [n.lower() for n in split_labels(raw["blocked_names"])]
+    target.skipped_names = [n.lower() for n in split_labels(raw["skipped_names"])]
+
+
+def load():
+    """Read settings.json, creating it from the environment on first start."""
+    global values
+    with _lock:
+        saved = {}
+        if os.path.exists(settings_file):
+            try:
+                with open(settings_file) as f:
+                    saved = json.load(f)
+            except (OSError, ValueError):
+                saved = {}
+
+        merged = {f["key"]: f["default"] for f in FIELDS}
+        for key, value in saved.items():
+            if key in FIELDS_BY_KEY:
+                try:
+                    merged[key] = coerce(FIELDS_BY_KEY[key], value)
+                except ValueError:
+                    pass
+        values = merged
+        apply(globals_namespace, values)
+
+        if not os.path.exists(settings_file):
+            _write(values)
+
+
+def _write(data):
+    os.makedirs(config_dir, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=config_dir, prefix=".settings-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+        os.chmod(tmp, 0o600)  # holds API keys and passwords
+        os.replace(tmp, settings_file)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
+
+def update(changes: dict):
+    """Validate and save changed settings. Returns {key: reason} for any rejected."""
+    global values
+    errors = {}
+    clean = {}
+    for key, value in changes.items():
+        field = FIELDS_BY_KEY.get(key)
+        if field is None:
+            errors[key] = "isn't a setting"
+            continue
+        # Secrets are never sent to the browser; an untouched one comes back as None
+        if field["type"] == "secret" and value is None:
+            continue
+        try:
+            clean[key] = coerce(field, value)
+        except ValueError as e:
+            errors[key] = f"{field['label']} {e}"
+
+    if errors:
+        return errors
+
+    with _lock:
+        new_values = {**values, **clean}
+        _write(new_values)
+        values = new_values
+        apply(globals_namespace, values)
+    return {}
+
+
+def preview(changes: dict):
+    """A copy of the current settings with unsaved changes applied, for testing a connection."""
+    from types import SimpleNamespace
+
+    raw = dict(values)
+    for key, value in changes.items():
+        field = FIELDS_BY_KEY.get(key)
+        if field is None or (field["type"] == "secret" and value is None):
+            continue
+        raw[key] = coerce(field, value)
+    target = SimpleNamespace(**{k: v for k, v in globals().items() if not k.startswith("_")})
+    apply(target, raw)
+    return target
+
+
+def public_values():
+    """Settings safe to send to the browser: secrets are replaced by whether they're set."""
+    with _lock:
+        return {
+            key: ({"set": bool(value)} if key in SECRET_KEYS else value)
+            for key, value in values.items()
+        }
+
+
+class _Module:
+    """Lets apply() set attributes on this module."""
+
+    def __setattr__(self, key, value):
+        globals()[key] = value
+
+    def __getattr__(self, key):
+        try:
+            return globals()[key]
+        except KeyError:
+            raise AttributeError(key)
+
+
+globals_namespace = _Module()
+load()

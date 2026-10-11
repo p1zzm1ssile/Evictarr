@@ -10,6 +10,12 @@ LABEL org.opencontainers.image.description='Evictarr: a maintained fork of Purga
 WORKDIR /app
 COPY ./src .
 
+# Settings, the web UI login and logs live here. Map it to appdata to keep them.
+ENV CONFIG_DIR=/config
+RUN mkdir -p /config
+VOLUME /config
+EXPOSE 9891
+
 RUN apk add python3 py3-pip
 RUN pip install --no-cache-dir --break-system-packages -r /app/requirements.txt
 HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \

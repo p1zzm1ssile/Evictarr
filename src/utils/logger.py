@@ -15,11 +15,6 @@ logger.remove()
 logger.level("STARTUP", no=25, color="<cyan><bold>")
 logger.level("ACTION", no=25, color="<yellow><bold>")
 
-valid_levels = {"INFO", "WARNING", "ERROR", "CRITICAL"}
-if config.log_level not in valid_levels:
-    logger.warning(f"Invalid LOG_LEVEL '{config.log_level}', defaulting to INFO")
-    config.log_level = "INFO"
-
 level_priority = {
     "STARTUP": 0,
     "CRITICAL": 1,
@@ -30,14 +25,13 @@ level_priority = {
     "INFO": 5,
 }
 
-min_priority = level_priority.get(config.log_level, 5)
-
 
 def custom_filter(record):
     lvl = record["level"].name
     if lvl == "STARTUP":
         return True
-    return level_priority.get(lvl, 100) <= min_priority
+    # Read each time, so a log level changed in the web UI applies straight away
+    return level_priority.get(lvl, 100) <= level_priority.get(config.log_level, 5)
 
 
 if config.log_output in ["all", "stdout"]:
@@ -48,13 +42,16 @@ if config.log_output in ["all", "stdout"]:
         colorize=True,
     )
 
-if config.log_output in ["all", "web"]:
-    logger.add(
-        "evictarr.log",
-        format="{time:YYYY-MM-DD HH:mm:ss} [{level}] {message}",
-        filter=custom_filter,
-        rotation="10 MB",
-        colorize=False,
-    )
+# Always written, for the Logs page and the log download
+os.makedirs(config.log_dir, exist_ok=True)
+logger.add(
+    config.log_file,
+    format="{time:YYYY-MM-DD HH:mm:ss} [{level}] {message}",
+    filter=custom_filter,
+    rotation="10 MB",
+    retention=5,
+    colorize=False,
+    enqueue=True,
+)
 
 __all__ = ["logger"]

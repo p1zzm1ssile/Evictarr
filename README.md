@@ -26,21 +26,9 @@ Purgarr hasn't been updated since June 2025, and bug reports and feature request
 
 If you're Steve and you'd like anything here done differently, please [open an issue](https://github.com/p1zzm1ssile/Evictarr/issues) and I'll sort it out.
 
-## Minimum Setup
+## Getting Started
 
-### Commandline
-
-```bash
-docker run --name evictarr \
-  -e QBIT_URL='ip-address-or-hostname-with-port' \
-  -e QBIT_PASSWORD='password' \
-  -e SONARR_API_KEY='password' \
-  -e SONARR_URL='ip-address-or-hostname-with-port' \
-  -e RADARR_API_KEY='password' \
-  -e RADARR_URL='ip-address-or-hostname-with-port' \
-  -p  9891:9891 \
-  ghcr.io/p1zzm1ssile/evictarr:latest
-```
+Evictarr is set up in its web UI. All it needs is a port and a folder for its settings.
 
 ### Docker Compose
 
@@ -49,17 +37,54 @@ services:
   evictarr:
     image: ghcr.io/p1zzm1ssile/evictarr:latest
     container_name: evictarr
-    environment:
-      - QBIT_URL='ip-address-or-hostname-with-port'
-      - QBIT_PASSWORD='password'
-      - SONARR_API_KEY='password'
-      - SONARR_URL='ip-address-or-hostname-with-port'
-      - RADARR_API_KEY='password'
-      - RADARR_URL='ip-address-or-hostname-with-port'
     ports:
       - 9891:9891
+    volumes:
+      - ./evictarr:/config
     restart: unless-stopped
 ```
+
+### Commandline
+
+```bash
+docker run -d --name evictarr -p 9891:9891 -v /path/to/evictarr:/config ghcr.io/p1zzm1ssile/evictarr:latest
+```
+
+### Unraid
+
+Change the template's **Repository** to `ghcr.io/p1zzm1ssile/evictarr:latest` and add a **Path** with container path `/config` and host path `/mnt/user/appdata/evictarr`. Or copy [`unraid/evictarr.xml`](unraid/evictarr.xml) to `/boot/config/plugins/dockerMan/templates-user/` on your server and add Evictarr from **Docker > Add Container**.
+
+### First run
+
+1. Open `http://your-server:9891` **from your home network**. The first account can only be created from your local network.
+2. Create your login. The password needs at least 8 characters, with an uppercase letter, a lowercase letter, a number and a special character.
+3. Go to **Settings**. Tick your download client(s), add Sonarr and Radarr, choose what to purge and block. Use **Test connection** to check each one, and **Save** on each tab.
+
+Coming from Purgarr or an earlier Evictarr? Your existing environment variables are copied into the settings on first start, so nothing needs re-entering. After that, the web UI is where settings live.
+
+## The Web UI
+
+* **Downloads** (the start page): every download in every client, which of Sonarr/Radarr is tracking it and from which indexer, and its files. Each file shows whether it will be blocked or skipped.
+* **Logs**: everything Evictarr has done. **Issues** shows only errors and warnings, **Actions** shows only what was removed, blocklisted or skipped. **Download all logs** gives you every log file as a zip.
+* **Settings**, with a tab for each area and its own **Save** button:
+  * **General**: imported, stalled and failed-import purges, intervals, logs, your login.
+  * **Blocking**: file types and names to reject or skip.
+  * **Sonarr** and **Radarr**: address, API key and categories.
+  * **Download clients**: tick every client you use. Evictarr works with all of them at once, and keeps going with the others if one is down.
+  * **Indexers**: optionally connect Prowlarr and/or Jackett to see which indexers are working or failing on the Downloads page.
+
+Changes take effect as soon as you save, without a restart.
+
+## Login and Security
+
+> ⚠️ **Keep Evictarr on your home network.** It can see your download clients and holds their passwords and API keys. We don't recommend putting it behind a reverse proxy (Nginx Proxy Manager, SWAG, Traefik, Cloudflare Tunnel and the like) for access from outside your network. To reach it remotely, use a VPN such as WireGuard or Tailscale.
+
+* The password is stored as a scrypt hash in `/config/auth.json`, never in plain text.
+* After 5 wrong passwords, that address is locked out for 5 minutes.
+* **Skip login on my local network** (Settings > General) lets devices on your LAN in without a password. It never applies to requests that arrive through a reverse proxy, since behind a proxy every visitor appears to come from the proxy's own local address.
+* Saved passwords and API keys are never sent back to the browser.
+* `settings.json` and `auth.json` are only readable by the account Evictarr runs as.
+* **Forgotten your password?** Delete `auth.json` from the config folder and restart Evictarr. It will ask you to create a login again. Your settings are kept.
 
 ## Download Clients
 
@@ -154,7 +179,15 @@ Evictarr records the result of every check, and counts itself unhealthy when a c
 
 ## Environment Variables
 
-The minimum setup assumes Evictarr is running on the same host as your Arr stack. If this is not the case, the below table shows the additional options Evictarr can be configured with.
+Everything below can be set in the web UI instead. Environment variables are only read on **first start**, to create the settings, so existing Purgarr setups carry over. These are only read from the environment, every time:
+
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| WEB_PORT             | Port for the web UI | 9891 |
+| CONFIG_DIR           | Folder for settings, login and logs | /config |
+| LOG_OUTPUT           | `all` also logs to the container console, `web` only to the log file | all |
+
+The settings that can come from the environment on first start:
 
 | Environment Variable        | Type   | Description                                                                                                                                              | Default         | Required |
 |-----------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------|----------|

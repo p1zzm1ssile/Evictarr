@@ -1,17 +1,12 @@
 import requests
-import time
+import threading
 import utils.config as config
 import utils.status as status
-import sys
 from utils.logger import *
-from utils.webui import *
 from utils.files import match_file
 from services.sonarr import Sonarr
 from services.radarr import Radarr
-from services.qbittorrent import QBittorrentClient
-from services.deluge import DelugeClient
-from services.transmission import TransmissionClient
-from services.sabnzbd import SABnzbdClient
+from services.clients import MultiClient
 
 # Sonarr/Radarr queue states for a finished download they couldn't import
 FAILED_IMPORT_STATES = {"importPending", "importBlocked", "importFailed"}
@@ -39,21 +34,15 @@ def in_labels(torrent: dict, labels: list) -> bool:
 
 class Daemons:
     def __init__(self):
+        self.wake = threading.Condition()
+        self.generation = 0
+        self.reload()
+
+    def reload(self):
+        """Rebuild the connections from the current settings and run every check now."""
         self.sonarr = Sonarr()
         self.radarr = Radarr()
-
-        match config.torrent_client.lower():
-            case "qbittorrent" | "rdtclient":
-                self.torrent_client = QBittorrentClient()
-            case "deluge":
-                self.torrent_client = DelugeClient()
-            case "transmission":
-                self.torrent_client = TransmissionClient()
-            case "sabnzbd":
-                self.torrent_client = SABnzbdClient()
-            case _:
-                logger.critical(f"Unsupported download client: {config.torrent_client}")
-                sys.exit(1)
+        self.torrent_client = MultiClient()
 
         if config.unknown_file_groups:
             logger.warning(
@@ -61,13 +50,29 @@ class Daemons:
                 f"choose from {', '.join('@' + g for g in config.FILE_GROUPS)}"
             )
 
-        try:
-            self.torrent_client_version = self.torrent_client.version()
-            logger.info(f"Found {config.torrent_client} {self.torrent_client_version}")
-            status.set_client(config.torrent_client, self.torrent_client_version)
-        except Exception as e:
-            logger.error(f"Failed to communicate with {config.torrent_client} | {describe_error(e)}")
-            sys.exit(1)
+        if not self.torrent_client:
+            logger.warning("No download client is set up yet. Choose one in Settings > Download clients")
+            status.set_client("none", "")
+        else:
+            found = []
+            for name, version in self.torrent_client.versions().items():
+                if isinstance(version, Exception):
+                    logger.error(f"Can't reach {config.CLIENTS[name]} | {describe_error(version)}")
+                    found.append(f"{config.CLIENTS[name]} (unreachable)")
+                else:
+                    logger.info(f"Found {config.CLIENTS[name]} {version}")
+                    found.append(f"{config.CLIENTS[name]} {version}")
+            status.set_client(", ".join(found), "")
+
+        with self.wake:
+            self.generation += 1
+            self.wake.notify_all()
+
+    def sleep(self, seconds: float):
+        """Wait for the next run, or until the settings are saved."""
+        with self.wake:
+            generation = self.generation
+            self.wake.wait_for(lambda: self.generation != generation, timeout=seconds)
 
     def remove_log(self, type: str, torrents):
         n = 0
@@ -77,29 +82,57 @@ class Daemons:
                 "ACTION", f"({n}/{len(torrents)}) Purging {type} download: {t['name']}"
             )
 
-    def run_forever(self, check: str, interval: int, cycle):
+    def run_forever(self, check: str, interval, cycle):
         """Run one check every interval, recording how each run went.
 
-        An error in one run is logged and recorded, and the next run still happens.
+        interval is read before every wait, so a change in the web UI applies at
+        once. An error in one run is logged and recorded, and the next run still
+        happens. A download client that couldn't be reached fails the run too.
         """
-        status.register(check, interval)
+        status.register(check, interval())
 
         while True:
+            client = self.torrent_client
             try:
                 ok, summary = cycle()
             except Exception as e:
                 ok, summary = False, f"Failed: {describe_error(e)}"
 
-            status.record(check, ok, summary)
-            log = logger.info if ok else logger.error
-            log(f"{check.capitalize()} check: {summary} (next check in {interval}s)")
+            problems = [
+                f"{config.CLIENTS[name]}: {describe_error(e)}"
+                for name, e in getattr(client, "errors", {}).items()
+            ]
+            if problems and ok is not None:
+                ok = False
+                summary = "; ".join([summary, *problems])
 
-            time.sleep(interval)
+            seconds = interval()
+            if ok is None:
+                # Turned off or not set up: nothing to report on
+                status.record(check, True, summary, seconds)
+            else:
+                status.record(check, ok, summary, seconds)
+                log = logger.info if ok else logger.error
+                log(f"{check.capitalize()} check: {summary} (next check in {seconds}s)")
+
+            self.sleep(seconds)
+
+    def no_client(self):
+        if not self.torrent_client:
+            return False, "no download client set up"
+        return None
 
     def imported_evictarr(self):
-        self.run_forever("imported", config.purge_imported_interval, self.purge_imported)
+        self.run_forever(
+            "imported", lambda: config.purge_imported_interval, self.purge_imported
+        )
 
     def purge_imported(self):
+        if not config.purge_imported:
+            return None, "turned off"
+        if missing := self.no_client():
+            return missing
+
         torrents = [
             t
             for t in self.torrent_client.get_torrents()
@@ -113,14 +146,23 @@ class Daemons:
         self.torrent_client.remove_torrents([t["id"] for t in torrents])
         return True, f"purged {len(torrents)} imported download(s)"
 
-    def stalled_evictarr(self, service: str, url: str):
+    def stalled_evictarr(self, service: str, url: str = ""):
         self.run_forever(
             service.lower(),
-            config.purge_stalled_interval,
+            lambda: config.purge_stalled_interval,
             lambda: self.purge_service(service.lower()),
         )
 
     def purge_service(self, service: str):
+        if not getattr(config, f"{service}_enabled"):
+            return None, f"{service.capitalize()} turned off"
+        if not (config.purge_stalled or config.purge_failed_imports):
+            return None, "stalled and failed-import purges turned off"
+        if not getattr(config, f"{service}_api_key"):
+            return False, f"no {service.capitalize()} API key set"
+        if missing := self.no_client():
+            return missing
+
         match service:
             case "sonarr":
                 arr = self.sonarr
@@ -225,20 +267,29 @@ class Daemons:
 
     def extension_evictarr(self):
         self.run_forever(
-            "extensions", config.purge_extensions_interval, self.purge_extensions
+            "files", lambda: config.purge_extensions_interval, self.purge_extensions
         )
 
     def purge_extensions(self):
+        if not config.purge_extensions:
+            return None, "turned off"
+        if missing := self.no_client():
+            return missing
+
         results = []
         errors = []
 
         for service, arr in (("sonarr", self.sonarr), ("radarr", self.radarr)):
+            if not getattr(config, f"{service}_enabled") or not getattr(config, f"{service}_api_key"):
+                continue
             try:
                 queue = [q for page in arr.get_queue() for q in page]
                 results.append(self.purge_blocked_files(service, arr, queue))
             except Exception as e:
                 errors.append(f"{service} failed ({describe_error(e)})")
 
+        if not results and not errors:
+            return False, "Sonarr and Radarr aren't set up"
         return not errors, "; ".join(results + errors)
 
     def purge_blocked_files(self, service: str, arr, queue: list):
@@ -310,8 +361,10 @@ class Daemons:
         if rejected:
             blocklisted = 0
             for n, (t, q, reason) in enumerate(rejected, start=1):
+                indexer = f" from {q['indexer']}" if q.get("indexer") else ""
                 logger.log(
-                    "ACTION", f"({n}/{len(rejected)}) Rejecting download ({reason}): {t['name']}"
+                    "ACTION",
+                    f"({n}/{len(rejected)}) Rejecting download{indexer} ({reason}): {t['name']}",
                 )
                 # Blocklist first, while the release is still in the queue, so the
                 # Arr searches for another release instead of treating this one as done
@@ -327,9 +380,3 @@ class Daemons:
             )
 
         return "; ".join(results) or f"no blocked files in {service.capitalize()} downloads"
-
-    def webui(self):
-        server_address = ("", config.web_port)
-        httpd = HTTPServer(server_address, LogHandler)
-        logger.info(f"Starting web UI at {config.web_host}:{config.web_port}")
-        httpd.serve_forever()
