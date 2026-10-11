@@ -198,6 +198,23 @@ FIELDS = [
       env_str("SKIPPED_NAMES", default=""), section="Skip (keep the rest of the download)",
       help="e.g. *sample*. If nothing would be left, the download is rejected instead."),
 
+    F("skip_samples", "blocking", "Don't download sample files", "bool",
+      env_bool("SKIP_SAMPLES", default=False), section="Samples and languages",
+      help="Video files named sample, or in a Sample folder."),
+    F("languages", "blocking", "My languages", "languages", env_str("LANGUAGES", default="en"),
+      section="Samples and languages"),
+    F("skip_other_languages", "blocking", "Only keep subtitles and extra audio in my languages", "bool",
+      env_bool("SKIP_OTHER_LANGUAGES", default=False), section="Samples and languages",
+      help="Separate subtitle files (.srt, .ass, .sup…) and extra audio files (.mka, .dts, .ac3…) in other languages "
+           "aren't downloaded. Tracks inside a video file can't be checked; Sonarr/Radarr language profiles handle those."),
+    F("keep_unlabelled_languages", "blocking", "Keep subtitles and audio with no language in the name", "bool",
+      env_bool("KEEP_UNLABELLED_LANGUAGES", default=True), section="Samples and languages",
+      help="Many releases don't name the language of their main subtitles. Turn off to skip those too."),
+    F("reject_other_language_releases", "blocking", "Reject releases tagged with another language", "bool",
+      env_bool("REJECT_OTHER_LANGUAGE_RELEASES", default=False), section="Samples and languages",
+      help="e.g. GERMAN or FRENCH after the title, unless it's also tagged MULTi or with one of my languages. "
+           "The release is blocklisted and a replacement searched for."),
+
     # Sonarr and Radarr
     *[
         field
@@ -337,6 +354,13 @@ def coerce(field, value):
         raise ValueError("is too long")
     if t == "text" and field["key"].endswith("_url") and any(c in value for c in " <>\"'"):
         raise ValueError("isn't a valid address")
+    if t == "languages":
+        from utils.languages import LANGUAGES
+        codes = [c.lower() for c in split_labels(value)]
+        unknown = [c for c in codes if c not in LANGUAGES]
+        if unknown:
+            raise ValueError(f"has unknown language codes: {', '.join(unknown)}")
+        return ",".join(codes)
     if field["key"] == "local_networks":
         import ipaddress
         for item in split_labels(value):
@@ -378,6 +402,7 @@ def resolve(raw):
     resolved["blocked_names"] = [n.lower() for n in split_labels(raw["blocked_names"])]
     resolved["skipped_names"] = [n.lower() for n in split_labels(raw["skipped_names"])]
     resolved["local_networks"] = parse_networks(raw["local_networks"])
+    resolved["language_codes"] = set(split_labels(raw["languages"]))
     return resolved
 
 

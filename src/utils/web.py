@@ -16,7 +16,8 @@ from urllib.parse import parse_qs, urlparse
 import utils.auth as auth
 import utils.config as config
 import utils.status as status
-from utils.files import match_file
+from utils.files import match_file, skip_reason
+from utils.languages import LANGUAGES
 from utils.logger import logger
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
@@ -165,6 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                     "values": config.public_values(),
                     "groups": config.FILE_GROUPS,
                     "clients": config.CLIENTS,
+                    "languages": {code: name for code, (name, _) in LANGUAGES.items()},
                     "username": auth.username(),
                 })
             if path == "/api/downloads":
@@ -307,9 +309,11 @@ def downloads():
 
 def files(download_id):
     results = []
-    for f in daemons.torrent_client.get_files(download_id):
+    listed = daemons.torrent_client.get_files(download_id)
+    names = [f["name"] for f in listed]
+    for f in listed:
         blocked = match_file(f["name"], config.blocked_extensions, config.blocked_names)
-        skipped = None if blocked else match_file(f["name"], config.skipped_extensions, config.skipped_names)
+        skipped = None if blocked else skip_reason(f["name"], names)
         results.append({**f, "blocked": blocked, "skipped": skipped})
     return {"files": results}
 

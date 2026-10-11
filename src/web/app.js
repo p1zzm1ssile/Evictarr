@@ -324,6 +324,20 @@ function fieldInput(field, value, onChange) {
     };
   }
 
+  if (field.type === "languages") {
+    const chosen = String(value || "").split(",").map((p) => p.trim()).filter(Boolean);
+    const boxes = Object.entries(settings.languages).map(([code, name]) => {
+      const box = el("input", { type: "checkbox", checked: chosen.includes(code), onchange: onChange });
+      return { code, box, node: el("label", { class: "chip" }, box, name) };
+    });
+    return {
+      node: el("div", { class: "field", style: "margin-bottom:1rem" },
+        el("span", { class: "label", style: "font-weight:600;display:block;margin-bottom:0.4rem", text: field.label }),
+        el("div", { class: "chips" }, boxes.map((b) => b.node)), help, error),
+      get: () => boxes.filter((b) => b.box.checked).map((b) => b.code).join(","),
+    };
+  }
+
   let input;
   if (field.type === "select") {
     input = el("select", { id, onchange: onChange }, field.options.map((o) => el("option", { value: o, text: o, selected: o === value })));
@@ -411,7 +425,7 @@ async function showSettings(tab) {
     const isConnection = (tab === "sonarr" || tab === "radarr") && section.title === "Connection";
     return el("div", { class: "panel" },
       el("h2", { text: section.title }),
-      el("div", { class: section.fields.some((f) => f.type === "files") ? "" : "grid-2" }, rendered.map((r) => r.node)),
+      el("div", { class: section.fields.some((f) => f.type === "files" || f.type === "languages") ? "" : "grid-2" }, rendered.map((r) => r.node)),
       isConnection ? testButton(tab) : null);
   });
 

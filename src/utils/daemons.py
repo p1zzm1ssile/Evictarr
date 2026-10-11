@@ -3,7 +3,7 @@ import threading
 import utils.config as config
 import utils.status as status
 from utils.logger import *
-from utils.files import match_file
+from utils.files import match_file, release_language_problem, skip_reason
 from services.sonarr import Sonarr
 from services.radarr import Radarr
 from services.clients import MultiClient
@@ -336,6 +336,10 @@ class Daemons:
             if t is None:
                 continue
 
+            if problem := release_language_problem(t["name"]):
+                rejected.append((t, q, problem))
+                continue
+
             # A magnet link has no file list until its metadata arrives
             files = self.torrent_client.get_files(t["id"])
             if not files:
@@ -354,12 +358,12 @@ class Daemons:
                 rejected.append((t, q, f"blocked file(s) {', '.join(blocked)}"))
                 continue
 
-            to_skip = [
-                f
-                for f in files
-                if f["wanted"]
-                and match_file(f["name"], config.skipped_extensions, config.skipped_names)
-            ]
+            names = [f["name"] for f in files]
+            reasons = {}
+            for f in files:
+                if f["wanted"] and (reason := skip_reason(f["name"], names)):
+                    reasons[f["name"]] = reason
+            to_skip = [f for f in files if f["name"] in reasons]
             if not to_skip:
                 continue
 
@@ -367,8 +371,10 @@ class Daemons:
                 rejected.append((t, q, "nothing left to download after skipping files"))
                 continue
 
-            names = ", ".join(f["name"].replace("\\", "/").rsplit("/", 1)[-1] for f in to_skip)
-            logger.log("ACTION", f"Skipping {len(to_skip)} file(s) in {t['name']}: {names}")
+            listed = ", ".join(
+                f"{f['name'].replace(chr(92), '/').rsplit('/', 1)[-1]} ({reasons[f['name']]})" for f in to_skip
+            )
+            logger.log("ACTION", f"Skipping {len(to_skip)} file(s) in {t['name']}: {listed}")
             self.torrent_client.skip_files(t["id"], to_skip)
             skipped += len(to_skip)
 

@@ -169,6 +169,18 @@ SKIPPED_NAMES=*sample*
 
 `BLOCKED_EXTENSIONS` defaults to `@malware`. Archives aren't blocked by default because many genuine releases come packed in RARs, so only add `@archives` if you're happy for those to be replaced.
 
+### Samples and languages
+
+Also on the **Blocking** tab, under **Samples and languages**:
+
+* **Don't download sample files**: skips video files named sample or in a `Sample` folder, keeping the rest of the release.
+* **My languages**: tick the languages you want.
+* **Only keep subtitles and extra audio in my languages**: separate subtitle files (`.srt`, `.ass`, `.sup`…) and extra audio files (`.mka`, `.dts`, `.ac3`…) in other languages aren't downloaded. The language is read from the file name, e.g. `Movie.fr.srt` or `Subs/3_French.srt`. Audio files are only treated as extra tracks when the download also has a video, so music downloads aren't touched.
+* **Keep subtitles and audio with no language in the name**: on by default, since many releases don't label their main subtitles.
+* **Reject releases tagged with another language**: a release tagged e.g. `GERMAN` after its title (and not also `MULTi` or one of your languages) is blocklisted and a replacement is searched for. Title words don't count, so *The Italian Job* is safe.
+
+Evictarr only sees file names, not what's inside files, so it can't check the audio and subtitle tracks built into a video file. Sonarr's and Radarr's language profiles and custom formats handle those.
+
 Blocking was requested by [binhex](https://github.com/binhex) in [Purgarr #4](https://github.com/steveharsant/purgarr/issues/4).
 
 ## Health Check

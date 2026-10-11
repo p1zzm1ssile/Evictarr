@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 0.4.2
+
+`October 11 2026`
+
+### Features
+
+* **Samples and languages** on the Blocking tab:
+  * **Don't download sample files.**
+  * **My languages**, chosen with tick boxes.
+  * **Only keep subtitles and extra audio in my languages**: separate subtitle and audio files in other languages are skipped, read from file names like `Movie.fr.srt`, `Subs/3_French.srt` or `Movie.ger.dts`. Audio files only count next to a video, so music is untouched. Files with no language in the name are kept unless you turn that off.
+  * **Reject releases tagged with another language**, such as `GERMAN` after the title, unless also tagged `MULTi` or with one of your languages. Title words like "Italian" in *The Italian Job* don't count.
+* Skipped files are logged with their reason, e.g. `3_French.srt (subtitle in French)`, and the Downloads page shows it per file.
+
+
 ## 0.4.1
 
 `October 11 2026`
