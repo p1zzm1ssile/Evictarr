@@ -136,6 +136,12 @@ async function showDownloads() {
     el("option", { value: "stalled", text: "Stalled or errored" }));
   const expandAll = el("button", { type: "button", text: "Show all files" });
   const refresh = el("button", { type: "button", text: "Refresh" });
+  const runNow = el("button", { type: "button", text: "Run checks now", title: "Run every purge now instead of waiting for the next scheduled check" });
+  const selectedText = el("span", { class: "muted" });
+  const removeButton = el("button", { type: "button", class: "danger", text: "Remove…", disabled: true });
+  const clearButton = el("button", { type: "button", class: "link", text: "Clear selection" });
+  const actionBar = el("div", { class: "toolbar actionbar", hidden: true }, selectedText, removeButton, clearButton);
+  const selected = new Set();
   const summary = el("p", { class: "muted small" });
   const notices = el("div");
   const indexersBox = el("div");
@@ -146,12 +152,28 @@ async function showDownloads() {
     notices,
     el("div", { class: "toolbar" },
       el("div", { style: "flex:1;min-width:200px" }, search),
-      el("div", { style: "width:220px" }, filter), expandAll, refresh),
+      el("div", { style: "width:220px" }, filter), expandAll, refresh, runNow),
+    actionBar,
     el("div", { class: "panel", style: "padding:0;overflow-x:auto" }, table),
     summary,
     indexersBox);
 
   let downloads = [];
+
+  function updateSelection() {
+    // Forget anything that's no longer in the list
+    const ids = new Set(downloads.map((d) => d.id));
+    for (const id of [...selected]) if (!ids.has(id)) selected.delete(id);
+    actionBar.hidden = selected.size === 0;
+    removeButton.disabled = selected.size === 0;
+    selectedText.textContent = `${selected.size} selected`;
+    const all = table.querySelector("input.select-all");
+    const boxes = [...table.querySelectorAll("input.select-row")];
+    if (all) {
+      all.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+      all.indeterminate = !all.checked && boxes.some((b) => b.checked);
+    }
+  }
 
   function render() {
     const term = search.value.trim().toLowerCase();
@@ -160,21 +182,32 @@ async function showDownloads() {
       (filter.value !== "tracked" || d.tracked_by) &&
       (filter.value !== "stalled" || d.state === "stalled" || d.state === "error"));
 
+    const selectAll = el("input", { type: "checkbox", class: "select-all", "aria-label": "Select all shown downloads",
+      onchange: () => {
+        for (const d of shown) selectAll.checked ? selected.add(d.id) : selected.delete(d.id);
+        table.querySelectorAll("input.select-row").forEach((b) => (b.checked = selectAll.checked));
+        updateSelection();
+      } });
     const head = el("thead", {}, el("tr", {},
+      el("th", { class: "check" }, selectAll),
       el("th", { text: "Name" }), el("th", { text: "Client", class: "hide-small" }), el("th", { text: "Category" }),
       el("th", { text: "Status" }), el("th", { text: "Tracked by", class: "hide-small" }), el("th", { text: "Age", class: "hide-small" })));
     const body = el("tbody");
 
     for (const d of shown) {
       const [label, tone] = STATE_BADGE[d.state] || STATE_BADGE.unknown;
+      const box = el("input", { type: "checkbox", class: "select-row", checked: selected.has(d.id), "aria-label": `Select ${d.name}`,
+        onclick: (e) => e.stopPropagation(),
+        onchange: () => { box.checked ? selected.add(d.id) : selected.delete(d.id); updateSelection(); } });
       const row = el("tr", { class: "download", tabindex: "0", "aria-expanded": "false" },
+        el("td", { class: "check", onclick: (e) => e.stopPropagation() }, box),
         el("td", { class: "name" }, el("span", { class: "caret", text: "▸" }), d.name),
         el("td", { class: "hide-small", text: d.client }),
         el("td", { text: d.category || "—" }),
         el("td", {}, el("span", { class: `badge ${tone}`, text: label })),
         el("td", { class: "hide-small" }, d.tracked_by ? `${d.tracked_by}${d.indexer ? ` · ${d.indexer}` : ""}` : el("span", { class: "muted", text: "—" })),
         el("td", { class: "hide-small", text: age(d.age_minutes) }));
-      const detail = el("tr", { hidden: true }, el("td", { colspan: "6" }));
+      const detail = el("tr", { hidden: true }, el("td", { colspan: "7" }));
       const toggle = () => {
         const open = detail.hidden;
         detail.hidden = !open;
@@ -183,17 +216,70 @@ async function showDownloads() {
         if (open && !detail.dataset.loaded) { detail.dataset.loaded = "1"; loadFiles(row, d); }
       };
       row.addEventListener("click", toggle);
-      row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      row.addEventListener("keydown", (e) => {
+        if (e.target !== row) return;
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
       row._toggle = toggle;
       body.append(row, detail);
     }
 
     if (!shown.length) {
-      body.append(el("tr", {}, el("td", { colspan: "6", class: "empty",
+      body.append(el("tr", {}, el("td", { colspan: "7", class: "empty",
         text: downloads.length ? "Nothing matches." : "No downloads in your download clients right now." })));
     }
     table.replaceChildren(head, body);
-    summary.textContent = `${shown.length} of ${downloads.length} downloads. Click a download to see its files.`;
+    summary.textContent = `${shown.length} of ${downloads.length} downloads. Click a download to see its files, or tick downloads to remove them.`;
+    updateSelection();
+  }
+
+  function confirmRemove() {
+    const chosen = downloads.filter((d) => selected.has(d.id));
+    const tracked = chosen.filter((d) => d.tracked_by).length;
+    const deleteFiles = el("input", { type: "checkbox", checked: true });
+    const blocklist = el("input", { type: "checkbox", checked: tracked > 0, disabled: tracked === 0 });
+    const result = el("div", { class: "result", role: "status" });
+    const go = el("button", { type: "button", class: "primary danger-fill", text: `Remove ${chosen.length}` });
+    const cancel = el("button", { type: "button", text: "Cancel" });
+    const dialog = el("dialog", { class: "modal", "aria-labelledby": "remove-title" },
+      el("h2", { id: "remove-title", text: `Remove ${chosen.length} download${chosen.length === 1 ? "" : "s"}?` }),
+      el("ul", { class: "modal-list" }, chosen.slice(0, 8).map((d) => el("li", { class: "mono", text: d.name })),
+        chosen.length > 8 ? el("li", { class: "muted", text: `…and ${chosen.length - 8} more` }) : null),
+      el("label", { class: "switch" }, deleteFiles, el("span", { class: "track" }),
+        el("span", { class: "text" }, "Delete their files", el("div", { class: "help", text: "Turn off to remove them from the download client but keep what's been downloaded." }))),
+      el("label", { class: "switch" }, blocklist, el("span", { class: "track" }),
+        el("span", { class: "text" }, "Blocklist and search for a replacement",
+          el("div", { class: "help", text: tracked
+            ? `${tracked} of these ${tracked === 1 ? "is" : "are"} tracked by Sonarr/Radarr. They'll be added to the blocklist first, so a different release is grabbed.`
+            : "None of these are tracked by Sonarr or Radarr, so there's nothing to blocklist." }))),
+      result,
+      el("div", { class: "modal-actions" }, cancel, go));
+    document.body.append(dialog);
+    cancel.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => dialog.remove());
+    go.addEventListener("click", async () => {
+      go.disabled = cancel.disabled = true;
+      result.className = "result muted";
+      result.textContent = "Removing…";
+      try {
+        const r = await api("/api/downloads/remove", { method: "POST", body: JSON.stringify({
+          ids: chosen.map((d) => d.id), delete_files: deleteFiles.checked, blocklist: blocklist.checked && !blocklist.disabled }) });
+        const parts = [`Removed ${r.removed}`];
+        if (r.blocklisted) parts.push(`blocklisted ${r.blocklisted}`);
+        if (r.missing) parts.push(`${r.missing} already gone`);
+        selected.clear();
+        dialog.close();
+        await load();
+        // After the refresh, which clears earlier messages
+        notices.prepend(el("div", { class: `notice ${r.problems.length ? "bad" : "ok"}` },
+          parts.join(", ") + ".", r.problems.length ? el("div", { class: "small", text: r.problems.join("; ") }) : null));
+      } catch (e) {
+        result.className = "result bad";
+        result.textContent = e.message;
+        go.disabled = cancel.disabled = false;
+      }
+    });
+    dialog.showModal();
   }
 
   async function load() {
@@ -233,6 +319,24 @@ async function showDownloads() {
   search.addEventListener("input", render);
   filter.addEventListener("change", render);
   refresh.addEventListener("click", load);
+  removeButton.addEventListener("click", confirmRemove);
+  clearButton.addEventListener("click", () => {
+    selected.clear();
+    table.querySelectorAll("input.select-row").forEach((b) => (b.checked = false));
+    updateSelection();
+  });
+  runNow.addEventListener("click", async () => {
+    runNow.disabled = true;
+    try {
+      await api("/api/checks/run", { method: "POST", body: "{}" });
+      notices.replaceChildren(el("div", { class: "notice ok", text: "Running every check now. See Logs > Actions for what they do." }));
+      setTimeout(() => { load(); refreshHealth(); }, 4000);
+    } catch (e) {
+      notices.replaceChildren(el("div", { class: "notice bad", text: e.message }));
+    } finally {
+      setTimeout(() => (runNow.disabled = false), 4000);
+    }
+  });
   expandAll.addEventListener("click", () => {
     for (const row of table.querySelectorAll("tr.download:not(.open)")) row._toggle();
   });
@@ -534,6 +638,58 @@ function accountPanels() {
   ];
 }
 
+// ---------- Help & contact ----------
+
+const PROJECT = "https://github.com/p1zzm1ssile/Evictarr";
+
+function link(href, text) {
+  return el("a", { href, text, target: "_blank", rel: "noopener noreferrer" });
+}
+
+async function showHelp() {
+  const session = await api("/api/session");
+  const version = session.version || "unknown";
+  const issueBody = [
+    "**What happened?**", "", "", "**What did you expect?**", "", "",
+    "**Download client(s):** ", "", `Evictarr version: ${version}`,
+    "", "(Attach the zip from Settings > General > Download all logs if you can. Check it doesn't contain anything private first.)",
+  ].join("\n");
+  const bugUrl = `${PROJECT}/issues/new?labels=bug&body=${encodeURIComponent(issueBody)}`;
+  const ideaUrl = `${PROJECT}/issues/new?labels=enhancement&title=${encodeURIComponent("Idea: ")}`;
+
+  view.replaceChildren(
+    el("h1", { text: "Help & contact" }),
+    el("div", { class: "panel" },
+      el("h2", { text: "Get help or report a problem" }),
+      el("p", { text: "Evictarr is supported through GitHub. Anyone can open an issue, and you'll get a reply there." }),
+      el("div", { class: "toolbar" },
+        el("a", { class: "button primary", href: bugUrl, target: "_blank", rel: "noopener noreferrer", text: "Report a problem" }),
+        el("a", { class: "button", href: ideaUrl, target: "_blank", rel: "noopener noreferrer", text: "Suggest an idea" }),
+        el("a", { class: "button", href: `${PROJECT}/issues`, target: "_blank", rel: "noopener noreferrer", text: "See open issues" })),
+      el("h2", { text: "Before you report", style: "margin-top:1.25rem" }),
+      el("ol", { class: "help-steps" },
+        el("li", {}, "Check ", el("a", { href: "#/logs", text: "Logs" }), " and choose ", el("strong", { text: "Issues" }), ". The reason is often written there, such as a wrong password or an address that can't be reached."),
+        el("li", {}, "Use ", el("strong", { text: "Test connection" }), " on each tab in ", el("a", { href: "#/settings/clients", text: "Settings" }), " to check every connection."),
+        el("li", {}, "If you report a problem, attach your logs: ",
+          el("a", { href: "/api/logs/download", text: "download all logs" }),
+          ". Logs never contain your passwords or API keys, but they do list download names, so check you're happy to share them."))),
+    el("div", { class: "panel" },
+      el("h2", { text: "About Evictarr" }),
+      el("dl", { class: "about" },
+        el("dt", { text: "Version" }), el("dd", { class: "mono", text: version }),
+        el("dt", { text: "Project" }), el("dd", {}, link(PROJECT, "github.com/p1zzm1ssile/Evictarr")),
+        el("dt", { text: "What's new" }), el("dd", {}, link(`${PROJECT}/blob/main/CHANGELOG.md`, "Changelog")),
+        el("dt", { text: "Guide" }), el("dd", {}, link(`${PROJECT}#readme`, "README: setup, every setting explained")),
+        el("dt", { text: "Docker image" }), el("dd", { class: "mono", text: "ghcr.io/p1zzm1ssile/evictarr:latest" }))),
+    el("div", { class: "panel" },
+      el("h2", { text: "Thanks" }),
+      el("p", {}, "Evictarr is built on ", link("https://github.com/steveharsant/purgarr", "Purgarr"),
+        " by Steve Harsant, who created it. It's carried on here while Purgarr is inactive, with his history and licence kept."),
+      el("p", { class: "muted small" }, "Evictarr includes Purgarr's code under the ",
+        link("https://github.com/p1zzm1ssile/Evictarr/blob/main/LICENSE", "Boost Software License 1.0"), ".")),
+  );
+}
+
 // ---------- Router ----------
 
 async function route() {
@@ -545,6 +701,7 @@ async function route() {
   try {
     if (name === "logs") await showLogs();
     else if (name === "settings") await showSettings(sub || "general");
+    else if (name === "help") await showHelp();
     else await showDownloads();
   } catch (e) {
     view.replaceChildren(el("div", { class: "notice bad", text: e.message }));

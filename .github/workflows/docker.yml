@@ -20,7 +20,7 @@ jobs:
 
       - name: Read version
         id: version
-        run: echo "version=$(awk -F\" '/__version__/ {print $2}' src/main.py | head -n1)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(awk -F\" '/__version__/ {print $2}' src/utils/version.py | head -n1)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 

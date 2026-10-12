@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-__version__ = "0.4.3"
+from utils.version import __version__
 
 def main():
     signal.signal(signal.SIGINT, handle_sigint)

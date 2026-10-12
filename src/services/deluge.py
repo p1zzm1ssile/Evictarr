@@ -1,4 +1,5 @@
 import requests
+import time
 import utils.config as config
 from datetime import datetime
 from utils.logger import *
@@ -13,8 +14,28 @@ class DelugeClient:
         self.cfg = cfg or config
         self.session = requests.Session()
         self.request_id = 0
+        self.daemon_checked = 0
 
     def call(self, method: str, params: list, retry: bool = True):
+        # If the Web UI has lost its daemon (Deluge restarted, or someone clicked
+        # Disconnect in its Connection Manager), core calls hang instead of failing,
+        # so check the connection first: every 30 seconds, and after any failure
+        if retry and method.startswith("core.") and time.time() - self.daemon_checked > 30:
+            self.daemon_checked = time.time()
+            try:
+                # retry=True so a session that has expired is logged in again first
+                if not self.call("web.connected", []):
+                    self.connect_daemon()
+            except Exception:
+                self.daemon_checked = 0
+                raise
+        try:
+            return self._post(method, params, retry)
+        except Exception:
+            self.daemon_checked = 0
+            raise
+
+    def _post(self, method: str, params: list, retry: bool):
         self.request_id += 1
         response = self.session.post(
             f"{self.cfg.deluge_url}/json",
@@ -29,7 +50,10 @@ class DelugeClient:
             if retry and error.get("code") == self.NOT_AUTHENTICATED:
                 self.authenticate()
                 return self.call(method, params, retry=False)
-            raise Exception(f"{method} failed | {error.get('message')}")
+            message = str(error.get("message") or "")
+            if "Auth level too low" in message or "NotAuthorizedError" in message:
+                message = "the Deluge Web UI isn't connected to its daemon (check its Connection Manager)"
+            raise Exception(f"{method} failed | {message}")
 
         return body.get("result")
 
@@ -41,7 +65,10 @@ class DelugeClient:
             logger.error("Deluge authentication failed, check the Web UI password")
             return
 
-        # The Web UI has to be connected to a Deluge daemon before core.* calls work
+        self.connect_daemon()
+
+    def connect_daemon(self):
+        """The Web UI has to be connected to a Deluge daemon before core.* calls work."""
         if self.call("web.connected", [], retry=False):
             return
 

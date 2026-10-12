@@ -18,6 +18,7 @@ import utils.config as config
 import utils.status as status
 from utils.files import match_file, skip_reason
 from utils.languages import LANGUAGES
+from utils.version import __version__
 from utils.logger import logger
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
@@ -146,6 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                     "needs_setup": not auth.has_account(),
                     "password_rules": [{"id": i, "text": t} for i, t, _ in auth.PASSWORD_RULES],
                     "locked_for": auth.locked_for(self.ip),
+                    "version": __version__ if self.user() else None,
                 })
 
             # Everything below needs a login
@@ -246,6 +248,19 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=daemons.reload, daemon=True).start()
                 return self.send(200, {"ok": True, "values": config.public_values()})
 
+            if path == "/api/downloads/remove":
+                return self.send(200, remove_downloads(
+                    data.get("ids") or [],
+                    delete_files=bool(data.get("delete_files", True)),
+                    blocklist=bool(data.get("blocklist", False)),
+                    user=self.user(),
+                ))
+
+            if path == "/api/checks/run":
+                logger.info(f"Checks run by hand ({self.user()})")
+                daemons.run_now()
+                return self.send(200, {"ok": True})
+
             if path == "/api/test":
                 return self.send(200, test_connection(data.get("target", ""), data.get("values") or {}))
 
@@ -284,6 +299,56 @@ def tracked_downloads():
         except Exception:
             pass
     return tracked
+
+
+def remove_downloads(ids, delete_files, blocklist, user):
+    """Remove downloads chosen by hand, optionally blocklisting them first.
+
+    Blocklisting happens before removal, while the release is still in the
+    Sonarr/Radarr queue, so they can find it and search for a replacement.
+    """
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids) or len(ids) > 500:
+        raise ValueError("ids must be a list of download ids")
+
+    client = daemons.torrent_client
+    known = {t["id"].lower(): t for t in client.get_torrents()}
+    tracked = tracked_downloads() if blocklist else {}
+    arrs = {"Sonarr": daemons.sonarr, "Radarr": daemons.radarr}
+
+    removed, blocklisted, missing, problems = [], [], [], []
+    to_remove = []
+    for download_id in ids:
+        t = known.get(download_id.lower())
+        if t is None:
+            missing.append(download_id)
+            continue
+        if blocklist and download_id.lower() in tracked:
+            arr_name, q = tracked[download_id.lower()]
+            try:
+                if arrs[arr_name].block_release(q["title"], q["id"]):
+                    blocklisted.append(t["name"])
+            except Exception as e:
+                problems.append(f"{t['name']}: couldn't blocklist in {arr_name} ({describe(e)})")
+                continue  # don't remove it without the blocklist that was asked for
+        to_remove.append(t)
+
+    if to_remove:
+        try:
+            client.remove_torrents([t["id"] for t in to_remove], delete_files=delete_files)
+        except Exception as e:
+            problems.append(describe(e))
+        # Report what's actually gone, since one client failing doesn't stop the others
+        still_there = {t["id"].lower() for t in client.get_torrents()}
+        removed = [t["name"] for t in to_remove if t["id"].lower() not in still_there]
+
+    for name in removed:
+        how = "removed and blocklisted" if name in blocklisted else "removed"
+        files = "with its files" if delete_files else "keeping its files"
+        logger.log("ACTION", f"Manually {how} ({files}) by {user}: {name}")
+    for problem in problems:
+        logger.error(f"Manual removal: {problem}")
+
+    return {"removed": len(removed), "blocklisted": len(blocklisted), "missing": len(missing), "problems": problems}
 
 
 def downloads():

@@ -70,6 +70,12 @@ class Daemons:
             self.generation += 1
             self.wake.notify_all()
 
+    def run_now(self):
+        """Wake every check so it runs straight away."""
+        with self.wake:
+            self.generation += 1
+            self.wake.notify_all()
+
     def sleep(self, seconds: float):
         """Wait for the next run, or until the settings are saved."""
         with self.wake:

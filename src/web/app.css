@@ -311,3 +311,30 @@ ul.files li.unwanted .fname { color: var(--muted); text-decoration: line-through
   .hide-small { display: none; }
   .savebar { margin: 0 -1rem -1rem; }
 }
+
+/* Manual removal */
+th.check, td.check { width: 2.2rem; padding-right: 0; }
+td.check input, th.check input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+.actionbar { padding: 0.6rem 1rem; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--panel); }
+button.danger-fill { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+dialog.modal {
+  width: min(560px, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+dialog.modal::backdrop { background: rgba(0, 0, 0, 0.55); }
+.modal-list { max-height: 11rem; overflow: auto; margin: 0 0 1.25rem; padding-left: 1.1rem; font-size: 0.85rem; word-break: break-all; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
+/* Help */
+.help-steps { padding-left: 1.25rem; margin: 0; }
+.help-steps li { margin-bottom: 0.5rem; }
+dl.about { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1.5rem; margin: 0; }
+dl.about dt { color: var(--muted); }
+dl.about dd { margin: 0; word-break: break-word; }
+a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }

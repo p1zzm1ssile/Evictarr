@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.4.4
+
+`October 12 2026`
+
+### Features
+
+* **Remove downloads by hand** from the Downloads page: tick them and choose **Remove…**. Choose whether to delete their files, and whether to blocklist the ones Sonarr/Radarr are tracking so a replacement is searched for. Each removal is logged with who did it.
+* **Run checks now** button on the Downloads page.
+* **Help & contact** page: report a problem with a pre-filled GitHub issue, suggest an idea, check the version, and find the changelog and guide.
+
+### Bugfixes
+
+* Deluge: if its Web UI lost the connection to its daemon (Deluge restarted, or Disconnect clicked in its Connection Manager), every call hung until it timed out. Evictarr now checks the connection and reconnects by itself.
+
+
 ## 0.4.3
 
 `October 12 2026`

@@ -68,6 +68,9 @@ Coming from Purgarr or an earlier Evictarr? Your existing environment variables 
 ## The Web UI
 
 * **Downloads** (the start page): every download in every client, which of Sonarr/Radarr is tracking it and from which indexer, and its files. Each file shows whether it will be blocked or skipped.
+  * **Remove by hand:** tick downloads and choose **Remove…**. You choose whether to delete their files, and whether to blocklist them in Sonarr/Radarr so a different release is searched for (blocklisting happens first, while the release is still in their queue).
+  * **Run checks now** runs every purge straight away instead of waiting for the next one.
+* **Help**: how to get support or report a problem (with a pre-filled GitHub issue), the version, and links to the changelog and this guide.
 * **Logs**: everything Evictarr has done. **Issues** shows only errors and warnings, **Actions** shows only what was removed, blocklisted or skipped. **Download all logs** gives you every log file as a zip.
 * **Settings**, with a tab for each area and its own **Save** button:
   * **General**: imported, stalled and failed-import purges, intervals, logs, your login.
