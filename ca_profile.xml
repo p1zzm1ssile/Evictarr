@@ -11,6 +11,6 @@ Evictarr is a maintained fork of [Purgarr](https://github.com/steveharsant/purga
 
 Keep Evictarr on your home network. It holds your download clients' passwords and API keys, so it's not meant to be exposed to the internet through a reverse proxy.
   </Profile>
-  <Icon>https://raw.githubusercontent.com/p1zzm1ssile/Evictarr/main/src/web/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/p1zzm1ssile/Evictarr/main/src/web/evictarr-icon.png</Icon>
   <WebPage>https://github.com/p1zzm1ssile/Evictarr</WebPage>
 </CommunityApplications>
