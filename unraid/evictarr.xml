@@ -7,6 +7,7 @@
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/p1zzm1ssile/Evictarr/issues</Support>
+  <TemplateURL>https://raw.githubusercontent.com/p1zzm1ssile/Evictarr/main/unraid/evictarr.xml</TemplateURL>
   <Project>https://github.com/p1zzm1ssile/Evictarr</Project>
   <Overview>Keeps your download clients clean for Sonarr and Radarr. Removes imported, stalled and failed downloads, blocks releases containing malware or unwanted files and searches for replacements. Works with qBittorrent, RDTClient, Deluge, Transmission and SABnzbd. Set everything up in the web UI. A maintained fork of Purgarr by Steve Harsant.</Overview>
   <Category>Downloaders: MediaApp:Other Tools:</Category>
