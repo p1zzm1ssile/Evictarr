@@ -1,3 +1,5 @@
+<p align="center"><img src="src/web/logo.png" alt="Evictarr" width="280"></p>
+
 # Evictarr
 
 > ***Stalled, failed or done? Evicted.***

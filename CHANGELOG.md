@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.4.3
+
+`October 12 2026`
+
+* New Evictarr logo, in the web UI, the browser tab, the README and the Unraid icon.
+
+
 ## 0.4.2
 
 `October 11 2026`

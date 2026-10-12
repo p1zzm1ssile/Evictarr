@@ -63,7 +63,7 @@ header.top {
 }
 
 .brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 1.15rem; color: var(--text); text-decoration: none; }
-.brand img { width: 26px; height: 26px; }
+.brand img { width: 30px; height: 30px; border-radius: 7px; }
 
 nav.main { display: flex; gap: 0.25rem; }
 nav.main a {
@@ -297,7 +297,8 @@ ul.files li.unwanted .fname { color: var(--muted); text-decoration: line-through
 /* Login */
 .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; }
 .auth-box { width: 100%; max-width: 420px; }
-.auth-box .brand { justify-content: center; font-size: 1.5rem; margin-bottom: 1.25rem; }
+.auth-box .brand { flex-direction: column; justify-content: center; font-size: 1.5rem; margin-bottom: 1.25rem; }
+.auth-box .brand img { width: 120px; height: 120px; border-radius: 22px; }
 .rules { list-style: none; padding: 0; margin: 0.25rem 0 1rem; font-size: 0.88rem; }
 .rules li { color: var(--muted); padding: 0.1rem 0; }
 .rules li::before { content: "○ "; }

@@ -25,7 +25,8 @@ STATIC = {
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
     "/static/login.js": ("login.js", "text/javascript; charset=utf-8"),
-    "/static/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/static/favicon.png": ("favicon.png", "image/png"),
+    "/static/logo.png": ("logo.png", "image/png"),
 }
 COOKIE = "evictarr_session"
 LOG_LINE = re.compile(r"^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>[A-Z]+)\] (?P<message>.*)$")
