@@ -49,14 +49,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Published as a plain Docker v2 manifest without build attestations. With
+      # them, the image is an OCI index that Unraid's update check can't read, so
+      # Unraid never sees new versions.
       - name: Publish image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          provenance: false
+          sbom: false
+          outputs: type=image,push=true,oci-mediatypes=false
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
+
+      - name: Check Unraid can read the published image
+        run: |
+          # Unraid's update check asks for a Docker v2 manifest; it must not 404
+          token=$(curl -s "https://ghcr.io/token?scope=repository:p1zzm1ssile/evictarr:pull" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/p1zzm1ssile/evictarr/manifests/${{ steps.version.outputs.version }}")
+          echo "Docker v2 manifest: HTTP $code"
+          test "$code" = "200"
