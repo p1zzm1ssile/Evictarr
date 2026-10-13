@@ -197,6 +197,16 @@ Evictarr records the result of every check, and counts itself unhealthy when a c
 * **Command line:** `docker exec evictarr python healthcheck.py` prints the status and exits with 0 when healthy, 1 when not.
 * **Docker:** the image includes a `HEALTHCHECK`, so `docker ps` shows `healthy` or `unhealthy`.
 
+## Free forever
+
+Every feature in Evictarr is free and always will be. There are no paid tiers, no Pro account, no subscriptions and no telemetry, and new features will be free too. Services Evictarr works with, like your download clients, Sonarr and Radarr, have their own terms.
+
+## About the developer
+
+I'm an ISO 27001 Lead Auditor with combined-type ADHD, dyslexia and dyscalculia. I can read code and follow its logic and security well, but writing it out myself isn't possible.
+
+Evictarr is built on Steve Harsant's Purgarr, and the original design and code are his. For what I've added since, I design what each change does and how it works, and use AI as an assistive tool to write the code from that design. I review and test every change before it's released.
+
 ## Contact
 
 Bugs and ideas: [open an issue](https://github.com/p1zzm1ssile/Evictarr/issues). For anything private, email [p1zzm1ssilerepo@gmail.com](mailto:p1zzm1ssilerepo@gmail.com?subject=Evictarr). Both are also on the Help & contact page in the web UI.
