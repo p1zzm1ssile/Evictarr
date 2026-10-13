@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.4.5
+
+`October 13 2026`
+
+### Changes
+
+* Addresses for download clients, Sonarr, Radarr, Prowlarr and Jackett start empty on a new install, with an example such as `http://192.168.1.10:8080`, instead of `localhost`, which inside a container is the container itself.
+* Addresses must start with `http://` or `https://`. Addresses saved before this get `http://` added by themselves, so nothing needs re-entering.
+
 ## 0.4.4
 
 `October 12 2026`
