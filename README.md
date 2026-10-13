@@ -197,6 +197,10 @@ Evictarr records the result of every check, and counts itself unhealthy when a c
 * **Command line:** `docker exec evictarr python healthcheck.py` prints the status and exits with 0 when healthy, 1 when not.
 * **Docker:** the image includes a `HEALTHCHECK`, so `docker ps` shows `healthy` or `unhealthy`.
 
+## Contact
+
+Bugs and ideas: [open an issue](https://github.com/p1zzm1ssile/Evictarr/issues). For anything private, email [p1zzm1ssilerepo@gmail.com](mailto:p1zzm1ssilerepo@gmail.com?subject=Evictarr). Both are also on the Help & contact page in the web UI.
+
 ## Environment Variables
 
 Everything below can be set in the web UI instead. Environment variables are only read on **first start**, to create the settings, so existing Purgarr setups carry over. These are only read from the environment, every time:

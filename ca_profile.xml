@@ -1,16 +1,18 @@
 <?xml version="1.0"?>
 <CommunityApplications>
   <Profile>
-**Evictarr** keeps your download clients clean for Sonarr and Radarr.
+Tools that keep an Unraid media server tidy and running smoothly alongside Radarr, Sonarr and Jellyfin.
 
-It removes downloads once they've been imported, clears stalled downloads and failed imports, and blocks releases that contain malware or files you don't want (such as `.arj`, `.lnk`, `.exe`, RARs, ISOs and ROMs), blocklisting them in Sonarr/Radarr so a replacement is searched for. It can also skip samples, and subtitles or extra audio that aren't in your languages. It works with qBittorrent, RDTClient, Deluge, Transmission and SABnzbd, including several at once, and everything is set up in its web UI behind a login.
+**Dubarr** removes audio and subtitle tracks in languages you don't want, keeps the best track in the ones you do, and flags files with no audio in your language. It starts in report-only mode, keeps every original in a recycle folder with one-click restore, and waits for torrents to finish seeding.
 
-Evictarr is a maintained fork of [Purgarr](https://github.com/steveharsant/purgarr) by Steve Harsant, carried on while the original is inactive. His history and licence are kept in the repository.
+**Evictarr** keeps your download clients clean. It removes imported, stalled and failed downloads, blocks releases containing malware or files you don't want and searches for replacements, and can skip samples and subtitles or audio that aren't in your languages. It works with qBittorrent, RDTClient, Deluge, Transmission and SABnzbd. Evictarr is a maintained fork of [Purgarr](https://github.com/steveharsant/purgarr) by Steve Harsant.
 
-**Support:** please [open an issue on GitHub](https://github.com/p1zzm1ssile/Evictarr/issues). Before posting, check **Logs > Issues** in the web UI, and use **Download all logs** to attach them.
+**Setuparr** checks your Sonarr, Radarr, Prowlarr, Seerr, Jellyfin and Plex setup against the TRaSH guides, including Unraid folder mappings, tags and anime, and fixes what doesn't match with one button or shows you how. It never scans your server: it reads only the Unraid settings files you send it, and drops passwords, API keys and personal details as it reads them.
 
-Keep Evictarr on your home network. It holds your download clients' passwords and API keys, so it's not meant to be exposed to the internet through a reverse proxy.
+**Duplicatearr** finds the same film, episode, poster or extra stored more than once in your library, even when the copies are different encodes, and helps you keep the best one.
+
+All are set up in a web UI. For support, please open an issue on GitHub: [Dubarr](https://github.com/p1zzm1ssile/Dubarr/issues), [Evictarr](https://github.com/p1zzm1ssile/Evictarr/issues), [Setuparr](https://github.com/p1zzm1ssile/Setuparr/issues) or [Duplicatearr](https://github.com/p1zzm1ssile/Duplicatearr/issues). For anything private, email [p1zzm1ssilerepo@gmail.com](mailto:p1zzm1ssilerepo@gmail.com).
   </Profile>
-  <Icon>https://raw.githubusercontent.com/p1zzm1ssile/Evictarr/main/src/web/evictarr-icon.png</Icon>
-  <WebPage>https://github.com/p1zzm1ssile/Evictarr</WebPage>
+  <Icon>https://avatars.githubusercontent.com/u/336739941?v=4</Icon>
+  <WebPage>https://github.com/p1zzm1ssile/unraid-templates</WebPage>
 </CommunityApplications>
