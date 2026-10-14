@@ -93,7 +93,8 @@ class MultiClient:
                     for torrent_id in client_ids:
                         self.owner.pop(torrent_id.lower(), None)
             except Exception as e:
-                failures.append(f"{config.CLIENTS[name]}: {e}")
+                from utils.daemons import describe_error  # here, as daemons imports this module
+                failures.append(f"{config.CLIENTS[name]}: {describe_error(e)}")
         if failures:
             raise Exception("; ".join(failures))
 
