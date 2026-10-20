@@ -11,7 +11,7 @@ class Sonarr(Base):
             url=self.cfg.sonarr_url,
             endpoint="queue",
             api_key=self.cfg.sonarr_api_key,
-            params={"includeUnknownSeriesItems": "true", "page_size": 200},
+            params={"includeUnknownSeriesItems": "true", "pageSize": 200},
         )
 
     def get_history(self):
@@ -19,7 +19,7 @@ class Sonarr(Base):
             url=self.cfg.sonarr_url,
             endpoint="history",
             api_key=self.cfg.sonarr_api_key,
-            params={"eventType": 1, "page_size": 5000},
+            params={"eventType": 1, "pageSize": 5000},
         )
 
     def block_release(self, title, release_id):
