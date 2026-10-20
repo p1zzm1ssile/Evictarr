@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **File blocking now checks every download in the queue.** Only the first 10 Sonarr/Radarr queue items were being read, so a download further down (for example one containing an `.exe`) was never checked. Radarr downloads it can't match to a movie are now checked too, as Sonarr's already were.
 - **Keys and passwords are kept out of the logs.** Any API key or password, and any `apikey=`, `token=` or `password=` in a web address quoted by an error, is replaced by `***` before it's written. Log files, and the file that holds the login, can now only be read by the account the app runs as. A download client that can't remove a torrent no longer shows its raw error, which for SABnzbd could include the API key.
 
 ## 0.4.5

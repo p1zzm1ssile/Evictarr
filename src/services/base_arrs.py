@@ -27,9 +27,9 @@ class Base:
 
             records.append(body["records"])
 
-            total_pages = (body["totalRecords"] + params["page_size"] - 1) // params[
-                "page_size"
-            ]
+            # Sonarr/Radarr ignore unknown parameters, so go by the page size they used
+            page_size = body.get("pageSize") or params["pageSize"]
+            total_pages = (body["totalRecords"] + page_size - 1) // page_size
 
             if params["page"] >= total_pages:
                 break

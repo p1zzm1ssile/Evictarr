@@ -11,7 +11,7 @@ class Radarr(Base):
             url=self.cfg.radarr_url,
             endpoint="queue",
             api_key=self.cfg.radarr_api_key,
-            params={"page_size": 200},
+            params={"includeUnknownMovieItems": "true", "pageSize": 200},
         )
 
     def get_history(self):
@@ -19,7 +19,7 @@ class Radarr(Base):
             url=self.cfg.radarr_url,
             endpoint="history",
             api_key=self.cfg.radarr_api_key,
-            params={"eventType": 1, "page_size": 5000},
+            params={"eventType": 1, "pageSize": 5000},
         )
 
     def block_release(self, title, release_id):
