@@ -153,8 +153,9 @@ FIELDS = [
     F("purge_stalled_interval", "general", "Check every (seconds)", "int",
       env_int("PURGE_STALLED_INTERVAL", default=300), section="Stalled downloads", min=10),
     F("torrent_age", "general", "Grace period (minutes)", "int",
-      env_int("TORRENT_AGE", default=5), section="Stalled downloads", min=0,
-      help="How old a download must be before it can count as stalled."),
+      env_int("TORRENT_AGE", default=60), section="Stalled downloads", min=0,
+      help="How long a download must have been stalled before it's removed. "
+           "Slow torrents for older releases often stall for a while, so give them time."),
     F("purge_failed_imports", "general", "Remove failed imports", "bool",
       env_bool("PURGE_FAILED_IMPORTS", default=False), section="Failed imports",
       help="Remove and blocklist downloads Sonarr/Radarr couldn't import. Leave off if you import by hand."),
