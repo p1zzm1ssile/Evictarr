@@ -86,6 +86,7 @@ class SABnzbdClient:
                         "id": nzo_id,
                         "name": slot.get("filename", nzo_id),
                         "state": state,
+                        "stalled_for": stuck_minutes,
                     }
                 )
 

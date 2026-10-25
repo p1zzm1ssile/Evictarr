@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **File blocking now checks every download in the queue.** Only the first 10 Sonarr/Radarr queue items were being read, so a download further down (for example one containing an `.exe`) was never checked. Radarr downloads it can't match to a movie are now checked too, as Sonarr's already were.
+- **The stalled grace period now counts how long a download has been stalled**, not how long ago it was added. Before, a torrent added more than 5 minutes earlier was purged, blocklisted and replaced the first time a check found it stalled, even for a moment, so slow torrents for older releases were replaced again and again. A download that starts moving again starts the count again. The default grace period for new installs is now 60 minutes; an existing install keeps its saved value, so raise it under **Settings > General > Stalled downloads**.
 - **Keys and passwords are kept out of the logs.** Any API key or password, and any `apikey=`, `token=` or `password=` in a web address quoted by an error, is replaced by `***` before it's written. Log files, and the file that holds the login, can now only be read by the account the app runs as. A download client that can't remove a torrent no longer shows its raw error, which for SABnzbd could include the API key.
 
 ## 0.4.5

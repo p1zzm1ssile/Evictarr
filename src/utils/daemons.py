@@ -1,5 +1,6 @@
 import requests
 import threading
+import time
 import utils.config as config
 import utils.status as status
 from utils.logger import *
@@ -36,6 +37,7 @@ class Daemons:
     def __init__(self):
         self.wake = threading.Condition()
         self.generation = 0
+        self.stalled_since = {}  # check -> {download id: when it was first seen stalled}
         self.reload()
 
     def reload(self):
@@ -219,12 +221,30 @@ class Daemons:
                 return False
             return not in_labels(t, other_labels)
 
-        stalled_torrents = [
+        # The grace period counts how long a download has been stalled, not how old
+        # it is, so one that stalls briefly after downloading for hours isn't purged
+        # on the next check. A download that recovers starts the count again.
+        now = time.time()
+        grace = int(config.torrent_age) * 60
+        since = self.stalled_since.get(service, {})
+        stalled_now = [
             t
             for t in self.torrent_client.get_torrents()
-            if t["state"] == "stalled"
-            and t["age"] > int(config.torrent_age)
-            and belongs_here(t)
+            if t["state"] == "stalled" and belongs_here(t)
+        ]
+        since = {t["id"].lower(): since.get(t["id"].lower(), now) for t in stalled_now}
+        self.stalled_since[service] = since
+
+        def stalled_for(t):
+            # SABnzbd works out how long a download has been stuck itself
+            if "stalled_for" in t:
+                return t["stalled_for"] * 60
+            return now - since[t["id"].lower()]
+
+        stalled_torrents = [
+            t
+            for t in stalled_now
+            if stalled_for(t) >= grace
         ]
 
         if not stalled_torrents:

@@ -112,7 +112,7 @@ Set `DOWNLOAD_CLIENT=deluge` and give Evictarr the address and password of the D
 
 Evictarr reads categories from Deluge's **Label** plugin, which is what Sonarr and Radarr use. Deluge labels are always lowercase, so keep `SONARR_LABELS`, `RADARR_LABELS` and the imported labels in lowercase too.
 
-Deluge has no "stalled" state of its own. Evictarr treats a torrent as stalled when it is downloading with no seeds connected and nothing being received, and it is older than `TORRENT_AGE`.
+Deluge has no "stalled" state of its own. Evictarr treats a torrent as stalled when it is downloading with no seeds connected and nothing being received, and has been for longer than `TORRENT_AGE`.
 
 ### Transmission
 
@@ -120,7 +120,7 @@ Set `DOWNLOAD_CLIENT=transmission`, `TRANSMISSION_URL`, and `TRANSMISSION_USER` 
 
 Sonarr and Radarr store their category in a label on Transmission 4.0 and newer, and as a subfolder of the download folder on older versions. Evictarr checks both.
 
-Transmission has no "stalled" state of its own either. Evictarr treats a torrent as stalled when it is downloading with no peers sending anything, and it is older than `TORRENT_AGE`.
+Transmission has no "stalled" state of its own either. Evictarr treats a torrent as stalled when it is downloading with no peers sending anything, and has been for longer than `TORRENT_AGE`.
 
 ### SABnzbd
 
@@ -240,7 +240,7 @@ The settings that can come from the environment on first start:
 | IGNORE_OTHER_CATEGORIES     | bool   | Only purge stalled downloads whose category matches `SONARR_LABELS` or `RADARR_LABELS`; downloads in any other category are left alone                    | False           | No       |
 | RETRY_SEARCH                | bool   | Trigger Sonarr/Radarr to search for another release                                                                                                      | True            | No       |
 | DOWNLOAD_CLIENT             | string | Download client (Options: `qbittorrent`, `rdtclient`, `deluge`, `transmission`, `sabnzbd`). `TORRENT_CLIENT` also works                                 | `qbittorrent`   | No       |
-| TORRENT_AGE                 | int    | Grace period in minutes before a download is included in a stalled purge check                                                                           | 5 (minutes)     | No       |
+| TORRENT_AGE                 | int    | How long, in minutes, a download must have been stalled before it is purged                                                                              | 60 (minutes)    | No       |
 | PURGE_FAILED_IMPORTS        | bool   | Remove and blocklist downloads Sonarr/Radarr couldn't import (see [Removing Failed Imports](#removing-failed-imports))                                     | False           | No       |
 | PURGE_FILES                 | bool   | Turn on blocking and skipping files (see [Blocking and Skipping Files](#blocking-and-skipping-files)). `PURGE_EXTENSIONS` also works                       | False           | No       |
 | PURGE_EXTENSIONS_INTERVAL   | int    | Time in seconds between file checks                                                                                                                      | 60 (seconds)    | No       |
