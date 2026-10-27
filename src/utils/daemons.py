@@ -1,10 +1,13 @@
+import os
 import requests
 import threading
 import time
 import utils.config as config
 import utils.status as status
 from utils.logger import *
-from utils.files import match_file, release_language_problem, skip_reason
+from utils.files import (
+    download_key, find_leftovers, match_file, release_language_problem, remove_path, size_of, skip_reason,
+)
 from services.sonarr import Sonarr
 from services.radarr import Radarr
 from services.clients import MultiClient
@@ -308,6 +311,85 @@ class Daemons:
                 removed += 1
 
         return f"purged and blocklisted {removed} failed import(s)"
+
+    def leftovers_evictarr(self):
+        self.run_forever(
+            "leftovers", lambda: config.purge_leftovers_interval, self.purge_leftovers
+        )
+
+    def purge_leftovers(self):
+        """Find, and optionally delete, files in the download folders no download owns.
+
+        A client that removes a download but restarts before deleting its files
+        leaves them behind with nothing tracking them. Names are compared rather
+        than paths, as the client may see the folder under a different path.
+        """
+        if not config.purge_leftovers:
+            return None, "turned off"
+        if missing := self.no_client():
+            return missing
+        if not config.leftover_folders:
+            return False, "no download folders set"
+
+        downloads = self.torrent_client.get_torrents()
+        # Everything a missing client was downloading would look left over
+        if self.torrent_client.errors:
+            return False, "skipped, as a download client couldn't be reached"
+        known = {download_key(t["name"]) for t in downloads}
+        # A download saved without its own folder puts its files straight in the category folder
+        for t in downloads:
+            for f in self.torrent_client.get_files(t["id"]):
+                known.add(download_key(f["name"].replace("\\", "/").split("/", 1)[0]))
+        categories = {c for t in downloads for c in t.get("categories") or [t.get("category")] if c}
+
+        # Finished usenet jobs leave the client's queue before Sonarr/Radarr import them
+        for service, arr in (("sonarr", self.sonarr), ("radarr", self.radarr)):
+            if not getattr(config, f"{service}_enabled") or not getattr(config, f"{service}_api_key"):
+                continue
+            try:
+                for q in (q for page in arr.get_queue() for q in page):
+                    known.add(download_key(q.get("title") or ""))
+                    if q.get("outputPath"):
+                        known.add(download_key(os.path.basename(q["outputPath"].replace("\\", "/").rstrip("/"))))
+            except Exception as e:
+                return False, f"skipped, as {service.capitalize()} couldn't be reached ({describe_error(e)})"
+            categories.update(getattr(config, f"{service}_labels"))
+        categories.update(config.import_labels)
+        known.discard("")
+
+        changed_before = time.time() - config.leftover_age * 60
+        leftovers = []
+        for folder in config.leftover_folders:
+            if not os.path.isdir(folder):
+                return False, f"{folder} isn't a folder Evictarr can see. Map it into the container first"
+            leftovers += find_leftovers(folder, known, {download_key(c) for c in categories}, changed_before)
+
+        if not leftovers:
+            return True, "no leftover files"
+
+        total = 0
+        removed = 0
+        for n, path in enumerate(leftovers, start=1):
+            try:
+                size = size_of(path)
+            except OSError:
+                size = 0
+            total += size
+            if not config.delete_leftovers:
+                logger.info(f"({n}/{len(leftovers)}) Leftover, not deleted: {path} ({size / 1e9:.2f} GB)")
+                continue
+            try:
+                remove_path(path)
+                removed += 1
+                logger.log("ACTION", f"({n}/{len(leftovers)}) Deleting leftover: {path} ({size / 1e9:.2f} GB)")
+            except OSError as e:
+                logger.error(f"Can't delete leftover {path}: {e.strerror or e}")
+
+        if not config.delete_leftovers:
+            return True, f"found {len(leftovers)} leftover(s), {total / 1e9:.2f} GB, listed in the log and not deleted"
+        if removed < len(leftovers):
+            return False, f"deleted {removed} of {len(leftovers)} leftover(s), {total / 1e9:.2f} GB"
+        return True, f"deleted {removed} leftover(s), {total / 1e9:.2f} GB"
 
     def extension_evictarr(self):
         self.run_forever(

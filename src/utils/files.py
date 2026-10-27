@@ -1,3 +1,5 @@
+import os
+import shutil
 from fnmatch import fnmatchcase
 
 
@@ -70,3 +72,96 @@ def release_language_problem(name: str):
         return None
     names = ", ".join(sorted(lang.LANGUAGES[c][0] for c in found))
     return f"release is in {names}"
+
+
+# Suffixes download clients add to files still being downloaded
+PARTIAL_SUFFIXES = (".!qb", ".part", ".!ut", ".incomplete")
+
+
+def download_key(name: str) -> str:
+    """A name to compare a file or folder on disk with a download's name."""
+    name = name.lower()
+    for suffix in PARTIAL_SUFFIXES:
+        name = name.removesuffix(suffix)
+    return name
+
+
+def _newest_change(path: str) -> float:
+    newest = os.lstat(path).st_mtime
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            try:
+                newest = max(newest, os.lstat(os.path.join(root, name)).st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
+def _holds_downloads(path: str, known: set, folders: set, depth: int) -> bool:
+    """Whether a folder holds a download somewhere inside (a category folder like tv-sonarr)."""
+    if depth == 0:
+        return False
+    try:
+        entries = list(os.scandir(path))
+    except OSError:
+        return True  # can't look inside, so leave it alone
+    for entry in entries:
+        key = download_key(entry.name)
+        if key in known:
+            return True
+        if entry.is_dir(follow_symlinks=False) and (
+            key in folders or _holds_downloads(entry.path, known, folders, depth - 1)
+        ):
+            return True
+    return False
+
+
+def find_leftovers(folder: str, known: set, folders: set, changed_before: float, depth: int = 4) -> list:
+    """Files and folders in folder that don't belong to any download.
+
+    known is every download's name (from download_key). A folder named after a
+    category in folders, or one holding a download, is looked inside instead of
+    being counted, so category folders are never taken for leftovers. Hidden
+    entries, empty folders and anything changed after changed_before are left alone.
+    """
+    leftovers = []
+    for entry in sorted(os.scandir(folder), key=lambda e: e.name):
+        key = download_key(entry.name)
+        if entry.name.startswith(".") or key in known:
+            continue
+        if entry.is_dir(follow_symlinks=False) and (
+            key in folders or _holds_downloads(entry.path, known, folders, depth)
+        ):
+            if depth > 0:
+                leftovers += find_leftovers(entry.path, known, folders, changed_before, depth - 1)
+            continue
+        try:
+            # An empty folder takes no space, and may be one the client expects, such as its incomplete folder
+            if entry.is_dir(follow_symlinks=False) and not any(os.scandir(entry.path)):
+                continue
+            if _newest_change(entry.path) > changed_before:
+                continue
+        except OSError:
+            continue
+        leftovers.append(entry.path)
+    return leftovers
+
+
+def size_of(path: str) -> int:
+    if not os.path.isdir(path) or os.path.islink(path):
+        return os.lstat(path).st_size
+    total = 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(root, name)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def remove_path(path: str):
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)

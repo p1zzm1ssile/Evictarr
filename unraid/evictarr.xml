@@ -16,4 +16,5 @@
   <ExtraParams/>
   <Config Name="Web UI port" Target="9891" Default="9891" Mode="tcp" Description="Port for the Evictarr web UI" Type="Port" Display="always" Required="true" Mask="false">9891</Config>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/evictarr" Mode="rw" Description="Settings, login and logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/evictarr</Config>
+  <Config Name="Downloads" Target="/downloads" Default="" Mode="rw" Description="Optional: your download folder, for finding leftover files. Enter /downloads under Settings > General > Leftover files" Type="Path" Display="always" Required="false" Mask="false"></Config>
 </Container>
