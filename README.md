@@ -11,6 +11,7 @@ Evictarr is a lightweight companion to your Arr stack that keeps your download c
 * Removes downloads once Sonarr or Radarr has imported them.
 * Finds stalled downloads, blocklists them in Sonarr/Radarr and searches for a replacement.
 * Optionally clears downloads that Sonarr/Radarr couldn't import.
+* Optionally finds, and deletes, files left in your download folders that no download owns any more.
 * Optionally rejects downloads containing dangerous or unwanted files (`.arj`, `.lnk`, `.exe`, RARs, ISOs, ROMs and more), blocklists them and searches for a replacement.
 * Optionally skips files you don't want, such as samples, while keeping the rest of the download.
 * Can be limited to Sonarr's and Radarr's own categories, leaving everything else in your client alone.
@@ -138,6 +139,18 @@ Set `PURGE_FAILED_IMPORTS=True` to clear downloads that finished but that Sonarr
 
 This is off by default because it also catches downloads waiting for you to import them by hand. If you use manual import, leave it off.
 
+## Leftover Files
+
+A download client can lose track of files: qBittorrent, for example, deletes a removed torrent's files a little later, and forgets to if it restarts first. Those files then sit in your download folder with nothing tracking them.
+
+Turn on **Settings > General > Leftover files** to look for them. Evictarr lists every file and folder in your **Download folders** whose name doesn't match a download in any of your clients or in the Sonarr/Radarr queue. Category folders such as `tv-sonarr` are looked inside, not counted. Hidden files, empty folders and anything changed recently (120 minutes by default) are left alone, and the check is skipped while a client, Sonarr or Radarr can't be reached, since everything they hold would look left over.
+
+1. Map your download folder into the Evictarr container, e.g. `-v /mnt/user/downloads:/downloads`. In Unraid, fill in the template's **Downloads** path.
+2. Enter the folder as Evictarr sees it, e.g. `/downloads`. Names are compared, not paths, so it doesn't matter if your client sees it as `/data` or anything else.
+3. Leave **Delete leftover files** off at first. Leftovers are then only listed in the log, so you can check them. Turn it on once the list looks right.
+
+Never add your media library, or a folder that holds anything other than downloads: everything in it would count as left over.
+
 ## Blocking and Skipping Files
 
 Some public torrents carry malware in files like `.arj` or `.lnk`. Even if your torrent client skips those files, Sonarr and Radarr still see the download as finished and never look for another release. Other releases arrive as RARs, disc images or something else you don't want, or come with sample files you'd rather not download.
@@ -242,6 +255,11 @@ The settings that can come from the environment on first start:
 | DOWNLOAD_CLIENT             | string | Download client (Options: `qbittorrent`, `rdtclient`, `deluge`, `transmission`, `sabnzbd`). `TORRENT_CLIENT` also works                                 | `qbittorrent`   | No       |
 | TORRENT_AGE                 | int    | How long, in minutes, a download must have been stalled before it is purged                                                                              | 60 (minutes)    | No       |
 | PURGE_FAILED_IMPORTS        | bool   | Remove and blocklist downloads Sonarr/Radarr couldn't import (see [Removing Failed Imports](#removing-failed-imports))                                     | False           | No       |
+| PURGE_LEFTOVERS             | bool   | Look for leftover files in the download folders (see [Leftover Files](#leftover-files))                                                                  | False           | No       |
+| PURGE_LEFTOVERS_INTERVAL    | int    | Time in seconds between leftover checks                                                                                                                  | 3600 (seconds)  | No       |
+| LEFTOVER_FOLDERS            | string | Download folders to look in, as Evictarr sees them, separated by commas                                                                                  |                 | No       |
+| LEFTOVER_AGE                | int    | Leave alone anything changed in this many minutes                                                                                                        | 120 (minutes)   | No       |
+| DELETE_LEFTOVERS            | bool   | Delete leftovers, instead of only listing them in the log                                                                                                | False           | No       |
 | PURGE_FILES                 | bool   | Turn on blocking and skipping files (see [Blocking and Skipping Files](#blocking-and-skipping-files)). `PURGE_EXTENSIONS` also works                       | False           | No       |
 | PURGE_EXTENSIONS_INTERVAL   | int    | Time in seconds between file checks                                                                                                                      | 60 (seconds)    | No       |
 | BLOCKED_EXTENSIONS          | string | File types that get a download rejected, separated by commas. Groups like `@archives` work                                                               | @malware        | No       |

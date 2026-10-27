@@ -159,6 +159,21 @@ FIELDS = [
     F("purge_failed_imports", "general", "Remove failed imports", "bool",
       env_bool("PURGE_FAILED_IMPORTS", default=False), section="Failed imports",
       help="Remove and blocklist downloads Sonarr/Radarr couldn't import. Leave off if you import by hand."),
+    F("purge_leftovers", "general", "Find leftover files", "bool",
+      env_bool("PURGE_LEFTOVERS", default=False), section="Leftover files",
+      help="Look in your download folders for files and folders no download client or Sonarr/Radarr knows about, "
+           "such as files left behind when a client restarted before it finished deleting a download."),
+    F("purge_leftovers_interval", "general", "Check every (seconds)", "int",
+      env_int("PURGE_LEFTOVERS_INTERVAL", default=3600), section="Leftover files", min=60),
+    F("leftover_folders", "general", "Download folders", "labels",
+      env_str("LEFTOVER_FOLDERS", default=""), section="Leftover files",
+      help="Folders as Evictarr sees them, separated by commas, e.g. /downloads. Map them into the Evictarr container first. "
+           "Never add your media library: anything in it would count as left over."),
+    F("leftover_age", "general", "Leave alone if changed in the last (minutes)", "int",
+      env_int("LEFTOVER_AGE", default=120), section="Leftover files", min=10),
+    F("delete_leftovers", "general", "Delete leftover files", "bool",
+      env_bool("DELETE_LEFTOVERS", default=False), section="Leftover files",
+      help="Off: leftovers are only listed in the log, so you can check them first."),
     F("ignore_other_categories", "general", "Only touch Sonarr/Radarr categories", "bool",
       env_bool("IGNORE_OTHER_CATEGORIES", default=False), section="Behaviour",
       help="Leave downloads in any other category alone."),
@@ -427,6 +442,7 @@ def resolve(raw):
     resolved["blocked_names"] = [n.lower() for n in split_labels(raw["blocked_names"])]
     resolved["skipped_names"] = [n.lower() for n in split_labels(raw["skipped_names"])]
     resolved["local_networks"] = parse_networks(raw["local_networks"])
+    resolved["leftover_folders"] = [f.rstrip("/") or "/" for f in split_labels(raw["leftover_folders"])]
     resolved["language_codes"] = set(split_labels(raw["languages"]))
     return resolved
 

@@ -24,6 +24,7 @@ def main():
     checks = [
         ("imported", d.imported_evictarr, {}),
         ("blocked file", d.extension_evictarr, {}),
+        ("leftover files", d.leftovers_evictarr, {}),
         ("sonarr", d.stalled_evictarr, {"service": "sonarr"}),
         ("radarr", d.stalled_evictarr, {"service": "radarr"}),
     ]
