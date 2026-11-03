@@ -50,6 +50,11 @@ class Daemons:
         self.sonarr = Sonarr()
         self.radarr = Radarr()
         self.torrent_client = MultiClient()
+        # Leftovers are only listed on the first run after a start or a settings
+        # change, and the most downloads seen since, to tell when a list is short
+        self.leftover_runs = 0
+        self.most_downloads = 0
+        self.short_since = None
 
         if config.unknown_file_groups:
             logger.warning(
@@ -335,6 +340,8 @@ class Daemons:
         # Everything a missing client was downloading would look left over
         if self.torrent_client.errors:
             return False, "skipped, as a download client couldn't be reached"
+        if short := self.short_download_list(downloads):
+            return False, short
         known = {download_key(t["name"]) for t in downloads}
         # A download saved without its own folder puts its files straight in the category folder
         for t in downloads:
@@ -364,8 +371,20 @@ class Daemons:
                 return False, f"{folder} isn't a folder Evictarr can see. Map it into the container first"
             leftovers += find_leftovers(folder, known, {download_key(c) for c in categories}, changed_before)
 
+        self.leftover_runs += 1
         if not leftovers:
             return True, "no leftover files"
+
+        # A client that has just started, or Evictarr itself, may not have the
+        # full list yet, so the first run after a start only lists what it finds.
+        # Before deleting, the list is read again to make sure it hasn't changed.
+        delete = config.delete_leftovers and self.leftover_runs > 1
+        if delete:
+            again = self.torrent_client.get_torrents()
+            if self.torrent_client.errors:
+                return False, "skipped, as a download client couldn't be reached"
+            if {t["id"] for t in again} != {t["id"] for t in downloads}:
+                return True, "skipped, as the downloads changed during the check. Trying again next time"
 
         total = 0
         removed = 0
@@ -375,7 +394,7 @@ class Daemons:
             except OSError:
                 size = 0
             total += size
-            if not config.delete_leftovers:
+            if not delete:
                 logger.info(f"({n}/{len(leftovers)}) Leftover, not deleted: {path} ({size / 1e9:.2f} GB)")
                 continue
             try:
@@ -385,11 +404,38 @@ class Daemons:
             except OSError as e:
                 logger.error(f"Can't delete leftover {path}: {e.strerror or e}")
 
-        if not config.delete_leftovers:
+        if config.delete_leftovers and not delete:
+            return True, (
+                f"found {len(leftovers)} leftover(s), {total / 1e9:.2f} GB, listed in the log. "
+                "The first check after a start never deletes, they'll be deleted next time if still there"
+            )
+        if not delete:
             return True, f"found {len(leftovers)} leftover(s), {total / 1e9:.2f} GB, listed in the log and not deleted"
         if removed < len(leftovers):
             return False, f"deleted {removed} of {len(leftovers)} leftover(s), {total / 1e9:.2f} GB"
         return True, f"deleted {removed} leftover(s), {total / 1e9:.2f} GB"
+
+    def short_download_list(self, downloads: list):
+        """Why the download list may be missing some downloads, or None.
+
+        A client still loading its torrents after a restart answers with only
+        some of them, and the rest would look left over.
+        """
+        if loading := [t for t in downloads if t.get("state") == "loading"]:
+            return f"skipped, as a download client is still loading its downloads ({len(loading)} left)"
+        count = len(downloads)
+        if count < self.most_downloads / 2 and self.most_downloads - count >= 5:
+            self.short_since = self.short_since or time.time()
+            # Still this short a day later: the downloads were removed, not missing
+            if time.time() - self.short_since < 24 * 3600:
+                return (
+                    f"skipped, as the download clients list {count} downloads, down from {self.most_downloads}. "
+                    "If you removed them yourself, this clears once the list has been this short for a day"
+                )
+            self.most_downloads = 0
+        self.short_since = None
+        self.most_downloads = max(self.most_downloads, count)
+        return None
 
     def extension_evictarr(self):
         self.run_forever(

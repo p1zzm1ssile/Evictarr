@@ -96,6 +96,7 @@ const STATE_BADGE = {
   finished: ["Finished", "ok"],
   queued: ["Queued", ""],
   paused: ["Paused", ""],
+  loading: ["Loading", ""],
   unknown: ["Unknown", ""],
 };
 
