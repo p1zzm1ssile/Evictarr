@@ -5,12 +5,16 @@ import time
 import utils.config as config
 import utils.status as status
 from utils.logger import *
+from utils.repeats import RepeatedFailures
 from utils.files import (
     download_key, find_leftovers, match_file, release_language_problem, remove_path, size_of, skip_reason,
 )
 from services.sonarr import Sonarr
 from services.radarr import Radarr
 from services.clients import MultiClient
+
+# Checks that run within this many seconds of each other share one download list
+SHARED_LIST_AGE = 15
 
 # Sonarr/Radarr queue states for a finished download they couldn't import
 FAILED_IMPORT_STATES = {"importPending", "importBlocked", "importFailed"}
@@ -41,6 +45,7 @@ class Daemons:
         self.wake = threading.Condition()
         self.generation = 0
         self.stalled_since = {}  # check -> {download id: when it was first seen stalled}
+        self.repeats = RepeatedFailures()
         self.reload()
 
     def reload(self):
@@ -130,8 +135,12 @@ class Daemons:
                 status.record(check, True, summary, seconds)
             else:
                 status.record(check, ok, summary, seconds)
-                log = logger.info if ok else logger.error
-                log(f"{check.capitalize()} check: {summary} (next check in {seconds}s)")
+                if ok:
+                    if recovered := self.repeats.succeeded(check):
+                        logger.info(f"{check.capitalize()} check: {recovered}")
+                    logger.info(f"{check.capitalize()} check: {summary} (next check in {seconds}s)")
+                elif message := self.repeats.failed(check, summary):
+                    logger.error(f"{check.capitalize()} check: {message} (next check in {seconds}s)")
 
             self.sleep(seconds)
 
@@ -153,7 +162,7 @@ class Daemons:
 
         torrents = [
             t
-            for t in self.torrent_client.get_torrents()
+            for t in self.torrent_client.get_torrents(max_age=SHARED_LIST_AGE)
             if in_labels(t, config.import_labels)
         ]
 
@@ -237,7 +246,7 @@ class Daemons:
         since = self.stalled_since.get(service, {})
         stalled_now = [
             t
-            for t in self.torrent_client.get_torrents()
+            for t in self.torrent_client.get_torrents(max_age=SHARED_LIST_AGE)
             if t["state"] == "stalled" and belongs_here(t)
         ]
         since = {t["id"].lower(): since.get(t["id"].lower(), now) for t in stalled_now}
@@ -481,7 +490,7 @@ class Daemons:
             if download_id:
                 tracked.setdefault(download_id, q)
 
-        downloads = {t["id"].lower(): t for t in self.torrent_client.get_torrents()}
+        downloads = {t["id"].lower(): t for t in self.torrent_client.get_torrents(max_age=SHARED_LIST_AGE)}
         rejected = []
         skipped = 0
 
