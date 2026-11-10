@@ -102,6 +102,9 @@ class QBittorrentClient:
                     state = "queued"
                 case "stalledDL" | "metaDL":
                     state = "stalled"
+                case "checkingResumeData":
+                    # qBittorrent is still starting up and loading its torrents
+                    state = "loading"
                 case _:
                     state = "unknown"
 

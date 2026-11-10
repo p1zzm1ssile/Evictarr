@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from fnmatch import fnmatchcase
 
@@ -116,13 +117,39 @@ def _holds_downloads(path: str, known: set, folders: set, depth: int) -> bool:
     return False
 
 
+# Tags a release name almost always has: a year, an episode number, a resolution,
+# a codec or a source. Separated from the rest of the name by a space, dot, dash,
+# underscore or bracket, so "Indiana Jones ... 2160p BDRip" counts and "movertest" doesn't.
+_RELEASE_TAG = re.compile(
+    r"(?:^|[\s._\-\[\(])(?:"
+    r"(?:19|20)\d\d|s\d{1,3}(?:e\d{1,4})*|\d{1,2}x\d{2,3}|\d{3,4}[pi]|4k|uhd|"
+    r"[xh]\.?26[45]|hevc|avc|xvid|av1|web(?:-?(?:dl|rip))?|blu-?ray|bd-?rip|br-?rip|dvd-?rip|hdtv|remux|hdr(?:10)?|"
+    r"\d{1,4}"  # an episode number, as in "[Group] Show - 05 [1080p]"
+    r")(?=$|[\s._\-\]\)])",
+    re.IGNORECASE,
+)
+# A torrent added by magnet is named after its hash until its details arrive
+_INFO_HASH = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$", re.IGNORECASE)
+
+
+def looks_like_download(name: str) -> bool:
+    """Whether a file or folder name looks like a download, as opposed to something put there by hand.
+
+    Only names that look like a release are ever taken for leftovers, so a folder
+    such as "movertest" or "backup" in the download folder is left alone.
+    """
+    key = download_key(name)
+    return bool(_INFO_HASH.match(key) or _RELEASE_TAG.search(key))
+
+
 def find_leftovers(folder: str, known: set, folders: set, changed_before: float, depth: int = 4) -> list:
     """Files and folders in folder that don't belong to any download.
 
     known is every download's name (from download_key). A folder named after a
     category in folders, or one holding a download, is looked inside instead of
     being counted, so category folders are never taken for leftovers. Hidden
-    entries, empty folders and anything changed after changed_before are left alone.
+    entries, empty folders, anything changed after changed_before and anything
+    whose name doesn't look like a download are left alone.
     """
     leftovers = []
     for entry in sorted(os.scandir(folder), key=lambda e: e.name):
@@ -134,6 +161,8 @@ def find_leftovers(folder: str, known: set, folders: set, changed_before: float,
         ):
             if depth > 0:
                 leftovers += find_leftovers(entry.path, known, folders, changed_before, depth - 1)
+            continue
+        if not looks_like_download(entry.name):
             continue
         try:
             # An empty folder takes no space, and may be one the client expects, such as its incomplete folder
