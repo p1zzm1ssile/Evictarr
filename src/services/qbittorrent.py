@@ -1,4 +1,5 @@
 import requests
+import threading
 import time
 import utils.config as config
 from datetime import datetime
@@ -16,6 +17,9 @@ class QBittorrentClient:
         self.session = requests.Session()
         self.last_sid_refresh = 0
         self.warned_no_cookie = False
+        # Every check shares this login. Logging in clears the cookies, so two
+        # checks logging in at once would knock out each other's session.
+        self.login_lock = threading.Lock()
 
     @property
     def url(self):
@@ -29,11 +33,23 @@ class QBittorrentClient:
     def password(self):
         return getattr(self.cfg, f"{self.prefix}_pass") or ""
 
-    def authenticate(self, force: bool = False):
-        now = time.time()
-        if not force and now - self.last_sid_refresh < self.cfg.qbit_token_refresh_interval:
-            return
+    def authenticate(self, force: bool = False, seen: float = None):
+        """Log in if the login is due for a refresh, or if force is set.
 
+        seen is when the login was last refreshed as of a request that was turned
+        away: if another check has logged in again since, that login is used.
+        """
+        if not force and time.time() - self.last_sid_refresh < self.cfg.qbit_token_refresh_interval:
+            return
+        with self.login_lock:
+            now = time.time()
+            if force and seen is not None and self.last_sid_refresh != seen:
+                return
+            if not force and now - self.last_sid_refresh < self.cfg.qbit_token_refresh_interval:
+                return
+            self._login(now)
+
+    def _login(self, now: float):
         logger.info(f"Refreshing {self.name} auth token")
         headers = {"Referer": self.url}
         data = {"username": self.user, "password": self.password}
@@ -65,17 +81,27 @@ class QBittorrentClient:
 
         self.last_sid_refresh = now
 
+    # Wait before the one retry after a timeout or a dropped connection
+    RETRY_DELAY = 2
+
+    def send(self, method: str, endpoint: str, **kwargs):
+        """Send a request, trying once more if it times out or the connection drops."""
+        try:
+            return self.session.request(method, f"{self.url}/{endpoint}", **kwargs)
+        except (requests.Timeout, requests.ConnectionError):
+            time.sleep(self.RETRY_DELAY)
+            return self.session.request(method, f"{self.url}/{endpoint}", **kwargs)
+
     def request(self, method: str, endpoint: str, **kwargs):
         kwargs.setdefault("timeout", self.cfg.request_timeout)
         self.authenticate()
-        response = self.session.request(method, f"{self.url}/{endpoint}", **kwargs)
+        seen = self.last_sid_refresh
+        response = self.send(method, endpoint, **kwargs)
 
         # The session expired before the refresh interval was up, log in again
         if response.status_code in (401, 403):
-            self.authenticate(force=True)
-            response = self.session.request(
-                method, f"{self.url}/{endpoint}", **kwargs
-            )
+            self.authenticate(force=True, seen=seen)
+            response = self.send(method, endpoint, **kwargs)
 
         response.raise_for_status()
         return response

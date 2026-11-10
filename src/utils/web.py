@@ -375,7 +375,8 @@ def downloads():
 
 def files(download_id):
     results = []
-    listed = daemons.torrent_client.get_files(download_id)
+    # Read fresh, so the page shows changes made in the client itself
+    listed = daemons.torrent_client.get_files(download_id, cached=False)
     names = [f["name"] for f in listed]
     for f in listed:
         blocked = match_file(f["name"], config.blocked_extensions, config.blocked_names)

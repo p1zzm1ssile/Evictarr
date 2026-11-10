@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Evictarr goes easier on qBittorrent.** Checks that run at the same moment now share one download list instead of each asking for its own, and a download's file list is read once and reused for up to an hour instead of every minute. A request that times out or loses its connection is tried once more before the check fails. The checks no longer knock out each other's qBittorrent login when it's refreshed, which caused failures that looked random.
+- **A check that keeps failing the same way is logged once**, then reminded about once an hour with how many runs have failed, and a line is written when it starts working again. Before, an unreachable qBittorrent wrote the same error every minute.
+- **Tests.** Evictarr now has tests, and a new image is only published when they pass.
+
 - **The leftover files check is more careful about what it deletes.** It no longer touches files or folders whose names don't look like a download, such as a test folder you made yourself. It skips the run while qBittorrent is still loading its torrents after a restart, or when a client suddenly lists far fewer downloads than before. The first check after Evictarr starts only lists leftovers, and the download list is read again just before deleting.
 - **Leftover files.** Evictarr can look in your download folders for files and folders that no download client or Sonarr/Radarr knows about, such as files qBittorrent never deleted because it restarted first. They're listed in the log, and deleted only if you turn on **Delete leftover files**. Map your download folder into the container and set it under **Settings > General > Leftover files**. See [Leftover Files](README.md#leftover-files).
 - **File blocking now checks every download in the queue.** Only the first 10 Sonarr/Radarr queue items were being read, so a download further down (for example one containing an `.exe`) was never checked. Radarr downloads it can't match to a movie are now checked too, as Sonarr's already were.
