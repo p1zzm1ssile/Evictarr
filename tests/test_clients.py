@@ -181,3 +181,17 @@ def test_a_second_timeout_fails(monkeypatch):
     except requests.Timeout:
         return
     raise AssertionError("expected a timeout")
+
+
+def test_file_errors_name_the_download_client():
+    import pytest
+    from services.clients import ClientError, DownloadGone
+
+    fake = FakeClient(DOWNLOADS)
+    fake.get_files = lambda torrent_id: (_ for _ in ()).throw(requests.Timeout())
+    m = multi(fake)
+    m.get_torrents()
+    with pytest.raises(ClientError, match="^qBittorrent: "):
+        m.get_files("AAA")
+    with pytest.raises(DownloadGone):
+        m.get_files("ZZZ")

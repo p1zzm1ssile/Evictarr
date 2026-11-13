@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Logs show the newest lines first**, with a note saying how far back the list goes. Before, the oldest of the last 500 lines was at the top, so errors from weeks ago could look current.
+- **The blocked file check names the right service when something fails.** A qBittorrent timeout while reading a download's files was reported as "sonarr failed". It now reads "Sonarr downloads not checked (qBittorrent: … didn't respond)", and a Sonarr or Radarr problem reads "couldn't read the Sonarr queue". A download removed by another check a moment earlier is now skipped instead of failing the run.
+
 - **Evictarr goes easier on qBittorrent.** Checks that run at the same moment now share one download list instead of each asking for its own, and a download's file list is read once and reused for up to an hour instead of every minute. A request that times out or loses its connection is tried once more before the check fails. The checks no longer knock out each other's qBittorrent login when it's refreshed, which caused failures that looked random.
 - **A check that keeps failing the same way is logged once**, then reminded about once an hour with how many runs have failed, and a line is written when it starts working again. Before, an unreachable qBittorrent wrote the same error every minute.
 - **Tests.** Evictarr now has tests, and a new image is only published when they pass.

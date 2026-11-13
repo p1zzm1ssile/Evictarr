@@ -11,7 +11,7 @@ from utils.files import (
 )
 from services.sonarr import Sonarr
 from services.radarr import Radarr
-from services.clients import MultiClient
+from services.clients import DownloadGone, MultiClient
 
 # Checks that run within this many seconds of each other share one download list
 SHARED_LIST_AGE = 15
@@ -354,7 +354,11 @@ class Daemons:
         known = {download_key(t["name"]) for t in downloads}
         # A download saved without its own folder puts its files straight in the category folder
         for t in downloads:
-            for f in self.torrent_client.get_files(t["id"]):
+            try:
+                files = self.torrent_client.get_files(t["id"])
+            except DownloadGone:
+                continue  # removed since the list was read; its name is already known
+            for f in files:
                 known.add(download_key(f["name"].replace("\\", "/").split("/", 1)[0]))
         categories = {c for t in downloads for c in t.get("categories") or [t.get("category")] if c}
 
@@ -463,11 +467,17 @@ class Daemons:
         for service, arr in (("sonarr", self.sonarr), ("radarr", self.radarr)):
             if not getattr(config, f"{service}_enabled") or not getattr(config, f"{service}_api_key"):
                 continue
+            name = service.capitalize()
             try:
                 queue = [q for page in arr.get_queue() for q in page]
+            except Exception as e:
+                errors.append(f"couldn't read the {name} queue ({describe_error(e)})")
+                continue
+            try:
                 results.append(self.purge_blocked_files(service, arr, queue))
             except Exception as e:
-                errors.append(f"{service} failed ({describe_error(e)})")
+                # Usually the download client: its errors name it, e.g. "qBittorrent: ..."
+                errors.append(f"{name} downloads not checked ({describe_error(e)})")
 
         if not results and not errors:
             return False, "Sonarr and Radarr aren't set up"
@@ -504,7 +514,10 @@ class Daemons:
                 continue
 
             # A magnet link has no file list until its metadata arrives
-            files = self.torrent_client.get_files(t["id"])
+            try:
+                files = self.torrent_client.get_files(t["id"])
+            except DownloadGone:
+                continue  # removed since the list was read, e.g. by another check
             if not files:
                 continue
 
