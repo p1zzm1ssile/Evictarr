@@ -354,6 +354,7 @@ async function showLogs() {
   const box = el("div", { class: "log", role: "log", "aria-live": "polite" });
   const search = el("input", { type: "search", placeholder: "Search logs", "aria-label": "Search logs" });
   const auto = el("input", { type: "checkbox", checked: true });
+  const range = el("p", { class: "muted small" });
   const buttons = {};
   const segmented = el("div", { class: "segmented", role: "group", "aria-label": "Show" },
     ["all", "issues", "actions"].map((k) => (buttons[k] = el("button", {
@@ -369,17 +370,21 @@ async function showLogs() {
       el("div", { style: "flex:1;min-width:180px" }, search),
       el("label", { class: "chip" }, auto, "Auto refresh"),
       el("a", { class: "button", href: "/api/logs/download", text: "Download all logs" })),
+    range,
     box);
 
   let lines = [];
   function render(scroll) {
     const term = search.value.trim().toLowerCase();
-    const shown = lines.filter((l) => !term || l.message.toLowerCase().includes(term));
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    // Newest first, so an old error further down isn't mistaken for a current one
+    const shown = lines.filter((l) => !term || l.message.toLowerCase().includes(term)).reverse();
+    const atTop = box.scrollTop < 40;
     box.replaceChildren(...(shown.length ? shown.map((l) => el("div", { class: "line" },
       el("span", { class: "time", text: l.time }), el("span", { class: `lvl lvl-${l.level}`, text: l.level }), l.message))
       : [el("div", { class: "empty", text: kind === "issues" ? "No issues. All good!" : "Nothing to show yet." })]));
-    if (scroll || atBottom) box.scrollTop = box.scrollHeight;
+    const oldest = shown.length && shown[shown.length - 1].time;
+    range.textContent = oldest ? `Newest first, back to ${oldest.slice(0, 16)}.` : "";
+    if (scroll || atTop) box.scrollTop = 0;
   }
 
   async function load(scroll) {
