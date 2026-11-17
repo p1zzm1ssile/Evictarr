@@ -22,6 +22,22 @@ def make_client(name: str, cfg=None):
     raise ValueError(f"Unknown download client: {name}")
 
 
+class DownloadGone(Exception):
+    """A download that no client has any more, e.g. removed between two checks."""
+
+
+class ClientError(Exception):
+    """A download client failed. The message names the client, so a check can't
+    blame Sonarr or Radarr for it."""
+
+    def __init__(self, name: str, error: Exception):
+        from utils.daemons import describe_error  # here, as daemons imports this module
+
+        self.client = name
+        self.error = error
+        super().__init__(f"{config.CLIENTS.get(name, name)}: {describe_error(error)}")
+
+
 class MultiClient:
     """All enabled download clients behind the interface of one.
 
@@ -100,8 +116,8 @@ class MultiClient:
     def _client_for(self, torrent_id: str):
         name = self._owner(torrent_id)
         if name is None:
-            raise Exception(f"no download client has download {torrent_id}")
-        return self.clients[name]
+            raise DownloadGone(f"no download client has download {torrent_id}")
+        return name, self.clients[name]
 
     def remove_torrents(self, ids: list, delete_files: bool = None):
         """Remove downloads from whichever clients hold them.
@@ -138,14 +154,22 @@ class MultiClient:
         hit = self.files.get(key) if cached else None
         if hit and time.time() - hit[0] < self.FILES_MAX_AGE:
             return [dict(f) for f in hit[1]]
-        files = self._client_for(torrent_id).get_files(torrent_id)
+        name, client = self._client_for(torrent_id)
+        try:
+            files = client.get_files(torrent_id)
+        except Exception as e:
+            raise ClientError(name, e) from e
         # A magnet link has no files until its metadata arrives, so ask again next time
         if files:
             self.files[key] = (time.time(), [dict(f) for f in files])
         return files
 
     def skip_files(self, torrent_id: str, files: list):
-        result = self._client_for(torrent_id).skip_files(torrent_id, files)
+        name, client = self._client_for(torrent_id)
+        try:
+            result = client.skip_files(torrent_id, files)
+        except Exception as e:
+            raise ClientError(name, e) from e
         cached = self.files.get(torrent_id.lower())
         if cached:
             skipped = {f["name"] for f in files}
